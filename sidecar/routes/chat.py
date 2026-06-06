@@ -729,6 +729,22 @@ async def _inject_request_image_context(conversation_id: str, image_paths: list[
 
 def _format_image_response(tool_name: str, result: dict) -> str:
     status = result.get("status")
+    task_id = result.get("task_id") or result.get("taskId")
+    if status == "queued" and task_id:
+        label = {
+            "generate_multiview_images_from_image": "三视图生成",
+            "edit_image": "图片编辑",
+            "modify_image_with_flux": "图片编辑",
+        }.get(tool_name, "图片生成")
+        return "\n".join(
+            [
+                f"{label}任务已加入队列。",
+                "",
+                f"任务 ID: `{task_id}`",
+                "",
+                "你可以继续发送新的聊天或生成任务；完成后会出现在生成历史里。",
+            ]
+        )
     if tool_name == "generate_multiview_images_from_image":
         front = result.get("front_path") or result.get("frontPath")
         left = result.get("left_path") or result.get("leftPath")
@@ -1733,6 +1749,17 @@ def _format_3d_response(tool_name: str, result: dict) -> str:
     }.get(tool_name, "3D \u751f\u6210")
 
     status = result.get("status")
+    task_id = result.get("task_id") or result.get("taskId")
+    if status == "queued" and task_id:
+        return "\n".join(
+            [
+                f"{mode_label} 任务已加入队列。",
+                "",
+                f"任务 ID: `{task_id}`",
+                "",
+                "你可以继续发送新的聊天或生成任务；完成后会出现在生成历史里。",
+            ]
+        )
     model_path = result.get("model_path") or result.get("modelPath")
     image_2d = result.get("image_2d") or result.get("image2D")
     image_normal = result.get("image_normal") or result.get("imageNormal")
@@ -2441,7 +2468,7 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
         return {"tool": "create_text_file", "result": result or {"ok": False, "error": "没有生成可写入的本地文件内容"}}
 
     if action == "generate_image":
-        result = await asyncio.to_thread(memory_mgr.handle_generate_image, prompt, quality_mode)
+        result = await asyncio.to_thread(memory_mgr.handle_generate_image, prompt, quality_mode, req.conversation_id)
         result["source_prompt"] = prompt
         result["quality_mode"] = quality_mode
         return {"tool": "generate_image", "result": result}
@@ -2475,7 +2502,7 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
             source = os.path.normpath(project_images[0]) if project_images else None
         if not source:
             if not capabilities.get("supports_vision"):
-                result = await asyncio.to_thread(memory_mgr.handle_generate_image, prompt, quality_mode)
+                result = await asyncio.to_thread(memory_mgr.handle_generate_image, prompt, quality_mode, req.conversation_id)
                 result["source_prompt"] = prompt
                 result["source_mode"] = "text_only_model_no_source_image"
                 result["quality_mode"] = quality_mode
@@ -2485,14 +2512,14 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
                 "result": {"status": "error", "message": "没有找到可编辑的源图片，请先上传图片、生成一张图片，或在当前项目文件夹中放入图片。"},
             }
         edit_prompt = await _build_visual_edit_prompt(client, model_name, source, prompt, capabilities)
-        result = await asyncio.to_thread(memory_mgr.handle_modify_image, source, edit_prompt)
+        result = await asyncio.to_thread(memory_mgr.handle_modify_image, source, edit_prompt, 0.5, req.conversation_id)
         result["source_prompt"] = edit_prompt
         result["source_image"] = source
         result["used_multimodal_prompt"] = bool(capabilities.get("supports_vision") and edit_prompt != prompt)
         return {"tool": "edit_image", "result": result}
 
     if action == "generate_3d_text":
-        result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_text, prompt, quality_mode)
+        result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_text, prompt, quality_mode, req.conversation_id)
         result["quality_mode"] = quality_mode
         return {"tool": "generate_3d_from_text", "result": result}
 
@@ -2503,12 +2530,12 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
             if latest:
                 image_paths = [latest]
         if action == "generate_3d_fusion" and len(image_paths) >= 2:
-            result = await asyncio.to_thread(memory_mgr.handle_generate_3d_fusion, image_paths[0], image_paths[1], prompt)
+            result = await asyncio.to_thread(memory_mgr.handle_generate_3d_fusion, image_paths[0], image_paths[1], prompt, req.conversation_id)
             return {"tool": "generate_3d_fusion", "result": result}
         if image_paths:
-            result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_image, image_paths[0])
+            result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_image, image_paths[0], req.conversation_id)
             return {"tool": "generate_3d_from_image", "result": result}
-        result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_text, prompt, quality_mode)
+        result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_text, prompt, quality_mode, req.conversation_id)
         result["quality_mode"] = quality_mode
         return {"tool": "generate_3d_from_text", "result": result}
 
@@ -2520,7 +2547,7 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
                 "tool": "generate_multiview_images_from_image",
                 "result": {"status": "error", "message": "没有找到源图片，请先上传一张图片或先生成一张图片。"},
             }
-        result = await asyncio.to_thread(memory_mgr.handle_generate_multiview_images_from_image, source, quality_mode)
+        result = await asyncio.to_thread(memory_mgr.handle_generate_multiview_images_from_image, source, quality_mode, req.conversation_id)
         result["source_image"] = source
         result["quality_mode"] = quality_mode
         return {"tool": "generate_multiview_images_from_image", "result": result}
@@ -2538,6 +2565,7 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
             views["left"],
             views["back"],
             quality_mode,
+            req.conversation_id,
         )
         result["quality_mode"] = quality_mode
         return {"tool": "generate_3d_from_generated_multiview", "result": result}
@@ -2781,6 +2809,7 @@ async def _run_tool_calls(
                     result = memory_mgr.handle_generate_image(
                         args.get("prompt", ""),
                         args.get("quality_mode", "fast"),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}
@@ -2825,6 +2854,7 @@ async def _run_tool_calls(
                     result = memory_mgr.handle_generate_3d_from_text(
                         args.get("prompt", ""),
                         args.get("quality_mode", "fast"),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}
@@ -2846,6 +2876,7 @@ async def _run_tool_calls(
                     args = json.loads(tool_call.function.arguments)
                     result = memory_mgr.handle_generate_3d_from_image(
                         args.get("image_path", ""),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}
@@ -2875,6 +2906,7 @@ async def _run_tool_calls(
                         args.get("image1_path", ""),
                         args.get("image2_path", ""),
                         args.get("prompt", ""),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}
@@ -2897,6 +2929,7 @@ async def _run_tool_calls(
                     result = memory_mgr.handle_generate_multiview_images_from_image(
                         args.get("image_path", ""),
                         args.get("quality_mode", "fast"),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}
@@ -2921,6 +2954,7 @@ async def _run_tool_calls(
                         args.get("left_path", ""),
                         args.get("back_path", ""),
                         args.get("quality_mode", "fast"),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}
@@ -2944,6 +2978,7 @@ async def _run_tool_calls(
                         args.get("source_path", ""),
                         args.get("modification_prompt", ""),
                         args.get("denoise_strength", 0.5),
+                        conversation_id,
                     )
                 except Exception as e:
                     result = {"status": "error", "message": str(e)}

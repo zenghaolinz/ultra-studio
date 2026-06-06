@@ -355,58 +355,167 @@ def handle_save_memory(
     }
 
 
-def handle_generate_3d_from_text(prompt: str, quality_mode: str = "fast") -> dict:
+def _generation_queue_position() -> tuple[dict, int]:
+    from services.generation_runtime import generation_queue_state
+
+    queue_state = generation_queue_state()
+    return queue_state, int(queue_state.get("active", 0) + queue_state.get("waiting", 0))
+
+
+def _queued_generation_response(task_id: str, task_type: str, queue_state: dict, message: str) -> dict:
+    from services.generation_tasks import task_result
+
+    return {
+        **task_result(task_id, message),
+        "taskType": task_type,
+        "queue": queue_state,
+    }
+
+
+def _run_json_generation_task(task_id: str, tool_func_name: str, args: tuple) -> None:
+    from services.generation_runtime import ensure_comfyui_ready, generation_slot
+    from services.generation_tasks import update_generation_task_sync
+
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
+        with generation_slot() as slot:
+            update_generation_task_sync(task_id, "running", {}, "", int(slot.get("queue_position", 0)))
             runtime = ensure_comfyui_ready()
             if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_generate_3d_text
-            import json
-            return json.loads(tool_generate_3d_text(prompt, quality_mode))
+                update_generation_task_sync(task_id, "error", {}, runtime.get("message", "ComfyUI is not ready"))
+                return
+            from tools import comfy_client
+
+            tool_func = getattr(comfy_client, tool_func_name)
+            result = json.loads(tool_func(*args))
+            if result.get("status") == "success":
+                outputs = {}
+                key_map = {
+                    "image_path": "imagePath",
+                    "improved_image_path": "imagePath",
+                    "front_path": "frontPath",
+                    "left_path": "leftPath",
+                    "back_path": "backPath",
+                    "source_image_path": "sourceImagePath",
+                    "model_path": "modelPath",
+                    "image_2d": "image2D",
+                    "image_normal": "imageNormal",
+                    "image_uv": "imageUV",
+                    "image1_path": "image1Path",
+                    "image2_path": "image2Path",
+                }
+                for key, output_key in key_map.items():
+                    if result.get(key):
+                        outputs[output_key] = result[key]
+                update_generation_task_sync(task_id, "success", outputs, "")
+            else:
+                update_generation_task_sync(task_id, "error", {}, result.get("message", "Generation failed"))
+    except Exception as e:
+        update_generation_task_sync(task_id, "error", {}, str(e))
+
+
+def _start_json_generation_task(
+    task_type: str,
+    tool_func_name: str,
+    args: tuple,
+    prompt: str = "",
+    quality_mode: str = "",
+    input_paths: list[str] | None = None,
+    conversation_id: str | None = None,
+) -> dict:
+    from services.generation_tasks import create_generation_task_sync
+
+    queue_state, queue_position = _generation_queue_position()
+    task_id = create_generation_task_sync(
+        task_type,
+        prompt,
+        quality_mode,
+        input_paths or [],
+        status="queued",
+        conversation_id=conversation_id,
+        queue_position=queue_position,
+    )
+    worker = threading.Thread(
+        target=_run_json_generation_task,
+        args=(task_id, tool_func_name, args),
+        daemon=True,
+    )
+    worker.start()
+    return _queued_generation_response(
+        task_id,
+        task_type,
+        queue_state,
+        f"{task_type} queued. You can continue sending new tasks.",
+    )
+
+
+def handle_generate_3d_from_text(prompt: str, quality_mode: str = "fast", conversation_id: str | None = None) -> dict:
+    try:
+        if not prompt.strip():
+            return {"status": "error", "message": "Prompt cannot be empty"}
+        return _start_json_generation_task(
+            "text_to_3d",
+            "tool_generate_3d_text",
+            (prompt, quality_mode),
+            prompt,
+            quality_mode,
+            [],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def handle_generate_3d_from_image(image_path: str) -> dict:
+def handle_generate_3d_from_image(image_path: str, conversation_id: str | None = None) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
-            runtime = ensure_comfyui_ready()
-            if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_generate_3d_image
-            import json
-            return json.loads(tool_generate_3d_image(image_path))
+        if not image_path or not os.path.exists(image_path):
+            return {"status": "error", "message": "Image path does not exist"}
+        return _start_json_generation_task(
+            "image_to_3d",
+            "tool_generate_3d_image",
+            (image_path,),
+            "",
+            "fast",
+            [image_path],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def handle_generate_3d_fusion(img1: str, img2: str, prompt: str) -> dict:
+def handle_generate_3d_fusion(img1: str, img2: str, prompt: str, conversation_id: str | None = None) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
-            runtime = ensure_comfyui_ready()
-            if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_generate_3d_dual
-            import json
-            return json.loads(tool_generate_3d_dual(img1, img2, prompt))
+        if not img1 or not os.path.exists(img1):
+            return {"status": "error", "message": "Image 1 path does not exist"}
+        if not img2 or not os.path.exists(img2):
+            return {"status": "error", "message": "Image 2 path does not exist"}
+        if not prompt.strip():
+            return {"status": "error", "message": "Prompt cannot be empty"}
+        return _start_json_generation_task(
+            "fusion_to_3d",
+            "tool_generate_3d_dual",
+            (img1, img2, prompt, "fast"),
+            prompt,
+            "fast",
+            [img1, img2],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def handle_generate_multiview_images_from_image(image_path: str, quality_mode: str = "fast") -> dict:
+def handle_generate_multiview_images_from_image(image_path: str, quality_mode: str = "fast", conversation_id: str | None = None) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
-            runtime = ensure_comfyui_ready()
-            if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_generate_multiview_images
-            import json
-            return json.loads(tool_generate_multiview_images(image_path, quality_mode))
+        if not image_path or not os.path.exists(image_path):
+            return {"status": "error", "message": "Image path does not exist"}
+        return _start_json_generation_task(
+            "generate_multiview_images",
+            "tool_generate_multiview_images",
+            (image_path, quality_mode),
+            "",
+            quality_mode,
+            [image_path],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -416,44 +525,55 @@ def handle_generate_3d_from_generated_multiview(
     left_path: str,
     back_path: str,
     quality_mode: str = "fast",
+    conversation_id: str | None = None,
 ) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
-            runtime = ensure_comfyui_ready()
-            if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_generate_3d_multiview
-            import json
-            return json.loads(tool_generate_3d_multiview(front_path, left_path, back_path, quality_mode))
+        for label, path in {"front": front_path, "left": left_path, "back": back_path}.items():
+            if not path or not os.path.exists(path):
+                return {"status": "error", "message": f"{label} image path does not exist"}
+        return _start_json_generation_task(
+            "multiview_to_3d",
+            "tool_generate_3d_multiview",
+            (front_path, left_path, back_path, quality_mode),
+            "Known multiview images",
+            quality_mode,
+            [front_path, left_path, back_path],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def handle_modify_image(source_path: str, modification_prompt: str, denoise_strength: float = 0.5) -> dict:
+def handle_modify_image(source_path: str, modification_prompt: str, denoise_strength: float = 0.5, conversation_id: str | None = None) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
-            runtime = ensure_comfyui_ready()
-            if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_improve_image
-            import json
-            return json.loads(tool_improve_image(source_path, modification_prompt))
+        if not source_path or not os.path.exists(source_path):
+            return {"status": "error", "message": "Image path does not exist"}
+        return _start_json_generation_task(
+            "improve_image",
+            "tool_improve_image",
+            (source_path, modification_prompt),
+            modification_prompt,
+            "",
+            [source_path],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def handle_generate_image(prompt: str, quality_mode: str = "fast") -> dict:
+def handle_generate_image(prompt: str, quality_mode: str = "fast", conversation_id: str | None = None) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
-        with generation_slot():
-            runtime = ensure_comfyui_ready()
-            if not runtime.get("ok"):
-                return error_result(runtime.get("message", "ComfyUI is not ready"))
-            from tools.comfy_client import tool_generate_image
-            import json
-            return json.loads(tool_generate_image(prompt, quality_mode))
+        if not prompt.strip():
+            return {"status": "error", "message": "Prompt cannot be empty"}
+        return _start_json_generation_task(
+            "generate_image",
+            "tool_generate_image",
+            (prompt, quality_mode),
+            prompt,
+            quality_mode,
+            [],
+            conversation_id,
+        )
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
