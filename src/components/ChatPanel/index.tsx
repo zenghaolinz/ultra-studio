@@ -1,9 +1,9 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+﻿import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/appStore";
-import type { GenerationTask, Message, ToolActivityEvent } from "../../types";
+import type { GenerationTask, ToolActivityEvent } from "../../types";
 import ModelPreview from "../ThreeDStudio/ModelPreview";
 import Icon from "../Icon";
 import { useLanguage } from "../../i18n";
@@ -579,15 +579,6 @@ function taskIdsFromContent(content: string) {
   return Array.from(ids);
 }
 
-function collectTaskIds(messages: { role: string; content: string }[]) {
-  const ids = new Set<string>();
-  for (const msg of messages) {
-    if (msg.role !== "assistant") continue;
-    for (const id of taskIdsFromContent(msg.content)) ids.add(id);
-  }
-  return Array.from(ids);
-}
-
 function taskOutputPath(task: GenerationTask) {
   return (
     task.outputPaths.modelPath ||
@@ -599,9 +590,8 @@ function taskOutputPath(task: GenerationTask) {
   );
 }
 
-function ChatGenerationTasks({ messages, onToast }: { messages: Message[]; onToast: (text: string) => void }) {
+function ChatGenerationTasks({ taskIds, onToast }: { taskIds: string[]; onToast: (text: string) => void }) {
   const { text } = useLanguage();
-  const taskIds = useMemo(() => collectTaskIds(messages), [messages]);
   const [tasks, setTasks] = useState<GenerationTask[]>([]);
 
   const refresh = useCallback(async () => {
@@ -633,7 +623,7 @@ function ChatGenerationTasks({ messages, onToast }: { messages: Message[]; onToa
   if (taskIds.length === 0 || tasks.length === 0) return null;
 
   return (
-    <div style={{ width: "min(760px, 100%)", display: "flex", flexDirection: "column", gap: 10, margin: "4px 0 14px 42px" }}>
+    <div style={{ width: "min(760px, 100%)", display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", fontWeight: 760 }}>
         <Icon name="clock" size={14} />
         {text("\u751f\u6210\u4efb\u52a1", "Generation tasks")}
@@ -1339,6 +1329,7 @@ export default function ChatPanel() {
             const docAssets = msg.role === "assistant" ? parseDocumentAssets(msg.content) : [];
             const multiviewAsset = msg.role === "assistant" ? parseMultiviewAsset(msg.content) : null;
             const imageAssets = msg.role === "assistant" ? parseGeneratedImageAssets(msg.content) : [];
+            const taskIds = msg.role === "assistant" ? taskIdsFromContent(msg.content) : [];
             const diagnostic = msg.role === "assistant" ? diagnoseError(msg.content, language) : null;
             const rawContent = threeDAsset ? stripThreeDAssetLines(msg.content) : msg.content;
             const assetStrippedContent = multiviewAsset ? stripMultiviewAssetLines(rawContent) : rawContent;
@@ -1392,6 +1383,7 @@ export default function ChatPanel() {
                   {projectCheckRequest && <ProjectCheckConfirmCard request={projectCheckRequest} onConfirm={() => confirmProjectCheck(projectCheckRequest)} onCancel={() => setToast(text("已取消项目检查", "Project check cancelled"))} />}
                   {implementationChoice && <ImplementationChoiceCard request={implementationChoice} onSelect={(id) => chooseImplementation(implementationChoice, id, msg.id)} />}
                   {agentTrace && <AgentTraceCard trace={agentTrace} />}
+                  {taskIds.length > 0 && <ChatGenerationTasks taskIds={taskIds} onToast={setToast} />}
                   {diagnostic && <div className="diagnostic-card"><Icon name="alert" size={15} /><span>{diagnostic}</span></div>}
                 </div>
                 {msg.role === "user" && (
@@ -1402,7 +1394,6 @@ export default function ChatPanel() {
               </div>
             );
           })}
-          <ChatGenerationTasks messages={messages} onToast={setToast} />
         </div>
       </div>
 
