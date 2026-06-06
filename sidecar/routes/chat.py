@@ -35,6 +35,12 @@ from routes.direct_files import (
     run_direct_text_file_create as _run_direct_text_file_create,
     run_direct_text_file_edit as _run_direct_text_file_edit,
 )
+from services.generation_runtime import (
+    COMFY_MANUAL_START_STATUS,
+    COMFY_STARTING_STATUS,
+    is_generation_action,
+    is_generation_tool,
+)
 
 router = APIRouter()
 
@@ -1244,6 +1250,17 @@ def _first_tool_result(tool_results: list[dict], tool_name: str) -> dict | None:
         if item.get("tool") == tool_name:
             return item
     return None
+
+
+def _requires_manual_comfy_start(result: dict | None) -> bool:
+    if not isinstance(result, dict):
+        return False
+    payload = result.get("result") if "result" in result else result
+    return isinstance(payload, dict) and bool(payload.get("manual_start_required"))
+
+
+def _any_requires_manual_comfy_start(items: list[dict]) -> bool:
+    return any(_requires_manual_comfy_start(item) for item in items)
 
 
 def _best_tool_result(tool_results: list[dict], tool_name: str) -> dict | None:
@@ -4120,6 +4137,7 @@ async def send_message_stream(req: ChatRequest):
             start_text = "\u5df2\u5f00\u59cb\u57fa\u4e8e\u4e0a\u4e00\u6b21\u751f\u6210\u7684 Flux \u56fe\u7247\u4fee\u6539\uff0c\u7136\u540e\u4f1a\u7528\u4fee\u6539\u540e\u7684\u56fe\u91cd\u65b0\u751f\u6210 3D \u6a21\u578b\u3002\n\n"
             full_content = ""
             yield f"data: {json.dumps({'status': start_text.strip()}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
 
             try:
                 mod_result = await _run_previous_3d_modification(
@@ -4133,6 +4151,8 @@ async def send_message_stream(req: ChatRequest):
                             "message": "\u6ca1\u6709\u68c0\u6d4b\u5230\u53ef\u4fee\u6539\u7684\u4e0a\u4e00\u6b21 3D \u7ed3\u679c\u3002",
                         },
                     }
+                if _requires_manual_comfy_start(mod_result):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
                 result_text = _format_3d_response(mod_result["tool"], mod_result["result"])
                 full_content += result_text
                 yield f"data: {json.dumps({'token': result_text}, ensure_ascii=False)}\n\n"
@@ -4269,6 +4289,8 @@ async def send_message_stream(req: ChatRequest):
             full_content = ""
             try:
                 action = route_decision.get("action")
+                if is_generation_action(action):
+                    yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 if action == "generate_image":
                     yield f"data: {json.dumps({'status': '正在生成图片'}, ensure_ascii=False)}\n\n"
                 elif action == "edit_image":
@@ -4289,6 +4311,8 @@ async def send_message_stream(req: ChatRequest):
                     provider_config[1],
                     provider_config,
                 )
+                if _requires_manual_comfy_start(routed_result):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
                 result_text = _format_router_result(routed_result)
                 if not result_text:
                     result_text = "我没能把这次请求映射到可执行工具，已退回普通对话处理。"
@@ -4372,6 +4396,8 @@ async def send_message_stream(req: ChatRequest):
                         "tool": "generate_3d_from_image",
                         "result": {"status": "error", "message": "No image-to-3D request detected"},
                     }
+                if _requires_manual_comfy_start(direct_result):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
                 result_text = _format_3d_response(
                     direct_result["tool"], direct_result["result"]
                 )
@@ -4431,6 +4457,7 @@ async def send_message_stream(req: ChatRequest):
             else:
                 start_text = "已开始生成图片，完成后会直接返回图片预览。\n\n"
             full_content = start_text
+            yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'token': start_text}, ensure_ascii=False)}\n\n"
 
             try:
@@ -4445,6 +4472,8 @@ async def send_message_stream(req: ChatRequest):
                         "tool": "generate_image",
                         "result": {"status": "error", "message": "没有检测到图片生成或图片编辑请求"},
                     }
+                if _requires_manual_comfy_start(direct_result):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
                 result_text = _format_image_response(direct_result["tool"], direct_result["result"])
                 full_content += result_text
                 yield f"data: {json.dumps({'token': result_text}, ensure_ascii=False)}\n\n"
@@ -4491,6 +4520,7 @@ async def send_message_stream(req: ChatRequest):
         async def project_document_asset_event_generator():
             full_content = ""
             try:
+                yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 project_document_asset_result = await _run_project_document_asset_request(
                     req,
                     client,
@@ -4501,6 +4531,8 @@ async def send_message_stream(req: ChatRequest):
                         "tool": "generate_image",
                         "result": {"status": "error", "message": "没有从项目文档中识别到可执行的生成任务"},
                     }
+                if _requires_manual_comfy_start(project_document_asset_result):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
 
                 start_text = _format_attachment_asset_start(project_document_asset_result["tool"])
                 full_content += start_text
@@ -4563,6 +4595,7 @@ async def send_message_stream(req: ChatRequest):
         async def attachment_asset_event_generator():
             full_content = ""
             try:
+                yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 attachment_asset_result = await _run_attachment_asset_request(
                     req,
                     client,
@@ -4573,6 +4606,8 @@ async def send_message_stream(req: ChatRequest):
                         "tool": "generate_image",
                         "result": {"status": "error", "message": "没有从附件中识别到可执行的生成任务"},
                     }
+                if _requires_manual_comfy_start(attachment_asset_result):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
 
                 start_text = _format_attachment_asset_start(attachment_asset_result["tool"])
                 full_content += start_text
@@ -4854,6 +4889,8 @@ async def send_message_stream(req: ChatRequest):
                 tool_status_queue = asyncio.Queue()
 
                 async def report_tool_start(tool_name: str):
+                    if is_generation_tool(tool_name):
+                        await tool_status_queue.put(COMFY_STARTING_STATUS)
                     await tool_status_queue.put(tool_name)
 
                 tool_task = asyncio.create_task(
@@ -4873,9 +4910,15 @@ async def send_message_stream(req: ChatRequest):
                         active_tool = await asyncio.wait_for(tool_status_queue.get(), timeout=0.08)
                     except asyncio.TimeoutError:
                         continue
-                    yield f"data: {json.dumps({'status': f'正在调用工具：{active_tool}'}, ensure_ascii=False)}\n\n"
+                    if active_tool in {COMFY_STARTING_STATUS, COMFY_MANUAL_START_STATUS}:
+                        status_text = active_tool
+                    else:
+                        status_text = f"正在调用工具：{active_tool}"
+                    yield f"data: {json.dumps({'status': status_text}, ensure_ascii=False)}\n\n"
 
                 messages, tool_results, saved_memories = await tool_task
+                if _any_requires_manual_comfy_start(tool_results):
+                    yield f"data: {json.dumps({'status': COMFY_MANUAL_START_STATUS}, ensure_ascii=False)}\n\n"
 
                 three_d_result = _first_3d_result(tool_results)
                 multiview_image_result = _first_tool_result(tool_results, "generate_multiview_images_from_image")

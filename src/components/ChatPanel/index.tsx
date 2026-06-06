@@ -903,6 +903,18 @@ function localizedLabel(value: string | undefined, labels: Record<string, { zh: 
 }
 
 function activityFromStatus(status: string, language: "zh" | "en") {
+  if (status === "ComfyUI 启动中/连接中") {
+    return {
+      label: language === "zh" ? "ComfyUI 启动中/连接中" : "Starting or connecting ComfyUI",
+      detail: "comfyui",
+    };
+  }
+  if (status === "请先启动 ComfyUI") {
+    return {
+      label: language === "zh" ? "请先启动 ComfyUI" : "Start ComfyUI first",
+      detail: "comfyui",
+    };
+  }
   const toolMatch = status.match(/^正在调用工具[：:]\s*(.+)$/);
   if (toolMatch) {
     const tool = toolMatch[1];
