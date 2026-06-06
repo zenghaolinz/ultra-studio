@@ -3,6 +3,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/appStore";
+import type { ToolActivityEvent } from "../../types";
 import ModelPreview from "../ThreeDStudio/ModelPreview";
 import Icon from "../Icon";
 import { useLanguage } from "../../i18n";
@@ -915,6 +916,12 @@ function activityFromStatus(status: string, language: "zh" | "en") {
       detail: "comfyui",
     };
   }
+  if (status === "ComfyUI 生成队列中") {
+    return {
+      label: language === "zh" ? "ComfyUI 生成队列中" : "Queued for ComfyUI generation",
+      detail: "queue",
+    };
+  }
   const toolMatch = status.match(/^正在调用工具[：:]\s*(.+)$/);
   if (toolMatch) {
     const tool = toolMatch[1];
@@ -941,6 +948,33 @@ function ActivityIndicator({ status }: { status?: string }) {
       <span className="agent-activity-text">{activity?.label || text("正在思考", "Thinking")}</span>
       <span className="agent-activity-detail">{activity?.detail || "reasoning"}</span>
     </div>
+  );
+}
+
+function ToolActivityTimeline({ events, active }: { events?: ToolActivityEvent[]; active?: boolean }) {
+  const { language, text } = useLanguage();
+  if (!events || events.length === 0) return null;
+  const latest = events[events.length - 1];
+  const latestActivity = activityFromStatus(latest.label, language);
+  return (
+    <details className="tool-activity-timeline" open={active}>
+      <summary>
+        <ActivityIndicator status={latest.label} />
+        <span>{text(`${events.length} 条记录`, `${events.length} events`)}</span>
+      </summary>
+      <div className="tool-activity-list">
+        {events.map((event, index) => {
+          const activity = activityFromStatus(event.label, language);
+          return (
+            <div className="tool-activity-row" key={event.id}>
+              <span className="tool-activity-index">{index + 1}</span>
+              <span className="tool-activity-row-main">{activity.label}</span>
+              <span className="tool-activity-row-detail">{activity.detail || latestActivity.detail}</span>
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
@@ -1182,9 +1216,11 @@ export default function ChatPanel() {
                     </div>
                   )}
 
-                  {isStreamingMsg && streamingStatus && (
+                  {msg.role === "assistant" && msg.toolEvents && msg.toolEvents.length > 0 ? (
+                    <ToolActivityTimeline events={msg.toolEvents} active={isStreamingMsg} />
+                  ) : isStreamingMsg && streamingStatus ? (
                     <ActivityIndicator status={streamingStatus} />
-                  )}
+                  ) : null}
 
                   {threeDAsset && <ThreeDAssetCard asset={threeDAsset} />}
                   {multiviewAsset && <MultiviewAssetCard asset={multiviewAsset} onToast={setToast} />}

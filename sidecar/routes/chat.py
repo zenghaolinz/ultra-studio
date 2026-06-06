@@ -37,7 +37,9 @@ from routes.direct_files import (
 )
 from services.generation_runtime import (
     COMFY_MANUAL_START_STATUS,
+    COMFY_QUEUED_STATUS,
     COMFY_STARTING_STATUS,
+    generation_queue_state,
     is_generation_action,
     is_generation_tool,
 )
@@ -4137,6 +4139,8 @@ async def send_message_stream(req: ChatRequest):
             start_text = "\u5df2\u5f00\u59cb\u57fa\u4e8e\u4e0a\u4e00\u6b21\u751f\u6210\u7684 Flux \u56fe\u7247\u4fee\u6539\uff0c\u7136\u540e\u4f1a\u7528\u4fee\u6539\u540e\u7684\u56fe\u91cd\u65b0\u751f\u6210 3D \u6a21\u578b\u3002\n\n"
             full_content = ""
             yield f"data: {json.dumps({'status': start_text.strip()}, ensure_ascii=False)}\n\n"
+            if generation_queue_state().get("busy"):
+                yield f"data: {json.dumps({'status': COMFY_QUEUED_STATUS}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
 
             try:
@@ -4290,6 +4294,8 @@ async def send_message_stream(req: ChatRequest):
             try:
                 action = route_decision.get("action")
                 if is_generation_action(action):
+                    if generation_queue_state().get("busy"):
+                        yield f"data: {json.dumps({'status': COMFY_QUEUED_STATUS}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 if action == "generate_image":
                     yield f"data: {json.dumps({'status': '正在生成图片'}, ensure_ascii=False)}\n\n"
@@ -4388,6 +4394,9 @@ async def send_message_stream(req: ChatRequest):
                 start_text = "\u5df2\u5f00\u59cb\u8fdb\u884c\u6587\u5b57\u751f\u6210 3D\u3002\u751f\u6210\u53ef\u80fd\u9700\u8981\u4e00\u70b9\u65f6\u95f4\uff0c\u6211\u4f1a\u5728\u5b8c\u6210\u540e\u76f4\u63a5\u8fd4\u56de\u6a21\u578b\u9884\u89c8\u548c\u5bfc\u51fa\u9009\u9879\u3002\n\n"
             full_content = ""
             yield f"data: {json.dumps({'status': start_text.strip()}, ensure_ascii=False)}\n\n"
+            if generation_queue_state().get("busy"):
+                yield f"data: {json.dumps({'status': COMFY_QUEUED_STATUS}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
 
             try:
                 direct_result = await _run_direct_3d_request(req.content, req.image_paths)
@@ -4457,6 +4466,8 @@ async def send_message_stream(req: ChatRequest):
             else:
                 start_text = "已开始生成图片，完成后会直接返回图片预览。\n\n"
             full_content = start_text
+            if generation_queue_state().get("busy"):
+                yield f"data: {json.dumps({'status': COMFY_QUEUED_STATUS}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'token': start_text}, ensure_ascii=False)}\n\n"
 
@@ -4520,6 +4531,8 @@ async def send_message_stream(req: ChatRequest):
         async def project_document_asset_event_generator():
             full_content = ""
             try:
+                if generation_queue_state().get("busy"):
+                    yield f"data: {json.dumps({'status': COMFY_QUEUED_STATUS}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 project_document_asset_result = await _run_project_document_asset_request(
                     req,
@@ -4595,6 +4608,8 @@ async def send_message_stream(req: ChatRequest):
         async def attachment_asset_event_generator():
             full_content = ""
             try:
+                if generation_queue_state().get("busy"):
+                    yield f"data: {json.dumps({'status': COMFY_QUEUED_STATUS}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 attachment_asset_result = await _run_attachment_asset_request(
                     req,
@@ -4890,6 +4905,8 @@ async def send_message_stream(req: ChatRequest):
 
                 async def report_tool_start(tool_name: str):
                     if is_generation_tool(tool_name):
+                        if generation_queue_state().get("busy"):
+                            await tool_status_queue.put(COMFY_QUEUED_STATUS)
                         await tool_status_queue.put(COMFY_STARTING_STATUS)
                     await tool_status_queue.put(tool_name)
 
@@ -4910,7 +4927,7 @@ async def send_message_stream(req: ChatRequest):
                         active_tool = await asyncio.wait_for(tool_status_queue.get(), timeout=0.08)
                     except asyncio.TimeoutError:
                         continue
-                    if active_tool in {COMFY_STARTING_STATUS, COMFY_MANUAL_START_STATUS}:
+                    if active_tool in {COMFY_STARTING_STATUS, COMFY_MANUAL_START_STATUS, COMFY_QUEUED_STATUS}:
                         status_text = active_tool
                     else:
                         status_text = f"正在调用工具：{active_tool}"

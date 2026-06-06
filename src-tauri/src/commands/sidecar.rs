@@ -316,6 +316,7 @@ pub async fn send_stream_start(
 
     let client = state.client.clone();
     let app_clone = app.clone();
+    let conv_id_for_events = conversation_id.clone();
     let conv_id_for_title = conversation_id.clone();
 
     let mut body = serde_json::json!({
@@ -346,7 +347,7 @@ pub async fn send_stream_start(
                 let status = resp.status();
                 if !status.is_success() {
                     let body = resp.text().await.unwrap_or_else(|_| "Unknown error".into());
-                    let _ = app_clone.emit("chat-error", serde_json::json!({"error": format!("HTTP {}: {}", status, body)}));
+                    let _ = app_clone.emit("chat-error", serde_json::json!({"conversationId": conv_id_for_events.clone(), "error": format!("HTTP {}: {}", status, body)}));
                     return;
                 }
 
@@ -375,15 +376,19 @@ pub async fn send_stream_start(
                                         }
                                         match serde_json::from_str::<serde_json::Value>(data) {
                                             Ok(json_val) => {
-                                                if json_val.get("token").is_some() {
-                                                    let _ = app_clone.emit("chat-chunk", json_val);
-                                                } else if json_val.get("status").is_some() {
-                                                    let _ = app_clone.emit("chat-status", json_val);
-                                                } else if json_val.get("done").is_some() {
-                                                    let _ = app_clone.emit("chat-done", json_val);
+                                                let mut event_val = json_val;
+                                                if let serde_json::Value::Object(ref mut obj) = event_val {
+                                                    obj.insert("conversationId".into(), serde_json::Value::String(conv_id_for_events.clone()));
+                                                }
+                                                if event_val.get("token").is_some() {
+                                                    let _ = app_clone.emit("chat-chunk", event_val);
+                                                } else if event_val.get("status").is_some() {
+                                                    let _ = app_clone.emit("chat-status", event_val);
+                                                } else if event_val.get("done").is_some() {
+                                                    let _ = app_clone.emit("chat-done", event_val);
                                                     return;
-                                                } else if json_val.get("error").is_some() {
-                                                    let _ = app_clone.emit("chat-error", json_val);
+                                                } else if event_val.get("error").is_some() {
+                                                    let _ = app_clone.emit("chat-error", event_val);
                                                     return;
                                                 }
                                             }
@@ -394,15 +399,15 @@ pub async fn send_stream_start(
                             }
                         }
                         Err(e) => {
-                            let _ = app_clone.emit("chat-error", serde_json::json!({"error": e.to_string()}));
+                            let _ = app_clone.emit("chat-error", serde_json::json!({"conversationId": conv_id_for_events, "error": e.to_string()}));
                             return;
                         }
                     }
                 }
-                let _ = app_clone.emit("chat-done", serde_json::json!({}));
+                let _ = app_clone.emit("chat-done", serde_json::json!({"conversationId": conv_id_for_events}));
             }
             Err(e) => {
-                let _ = app_clone.emit("chat-error", serde_json::json!({"error": e.to_string()}));
+                let _ = app_clone.emit("chat-error", serde_json::json!({"conversationId": conv_id_for_events, "error": e.to_string()}));
             }
         }
     });

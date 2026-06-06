@@ -1,4 +1,6 @@
 import time
+import threading
+from contextlib import contextmanager
 
 from tools.comfyui_manager import (
     LAUNCH_MODE_EXTERNAL,
@@ -40,6 +42,12 @@ GENERATION_ACTIONS = {
 
 COMFY_STARTING_STATUS = "ComfyUI 启动中/连接中"
 COMFY_MANUAL_START_STATUS = "请先启动 ComfyUI"
+COMFY_QUEUED_STATUS = "ComfyUI 生成队列中"
+
+_generation_lock = threading.Lock()
+_queue_lock = threading.Lock()
+_waiting_count = 0
+_active_count = 0
 
 
 def is_generation_tool(name: str | None) -> bool:
@@ -48,6 +56,29 @@ def is_generation_tool(name: str | None) -> bool:
 
 def is_generation_action(name: str | None) -> bool:
     return name in GENERATION_ACTIONS
+
+
+def generation_queue_state() -> dict:
+    with _queue_lock:
+        return {"active": _active_count, "waiting": _waiting_count, "busy": _active_count > 0 or _waiting_count > 0}
+
+
+@contextmanager
+def generation_slot():
+    global _waiting_count, _active_count
+    with _queue_lock:
+        queue_position = _active_count + _waiting_count
+        _waiting_count += 1
+    _generation_lock.acquire()
+    with _queue_lock:
+        _waiting_count = max(0, _waiting_count - 1)
+        _active_count += 1
+    try:
+        yield {"queue_position": queue_position}
+    finally:
+        with _queue_lock:
+            _active_count = max(0, _active_count - 1)
+        _generation_lock.release()
 
 
 def _manual_start_message(status: dict) -> str:

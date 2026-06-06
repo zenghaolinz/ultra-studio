@@ -4,6 +4,7 @@ import type {
   Project,
   ProjectFileSummary,
   Message,
+  ToolActivityEvent,
   ModelConfig,
   EmbeddingConfig,
   Persona,
@@ -15,16 +16,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { UiLanguage } from "../i18n";
 
-let streamGeneration = 0;
-let activeStream:
-  | {
-      generation: number;
-      conversationId: string;
-      messageId: string;
-      content: string;
-      createdAt: string;
-    }
-  | null = null;
+type ActiveStream = {
+  conversationId: string;
+  messageId: string;
+  content: string;
+  createdAt: string;
+  toolEvents: ToolActivityEvent[];
+  status: string;
+};
+const activeStreams: Record<string, ActiveStream> = {};
+const completedToolEvents: Record<string, ToolActivityEvent[]> = {};
 type PermissionMode = "standard" | "autonomous";
 
 type SendMessageOptions = {
@@ -119,6 +120,24 @@ function cleanupListeners(listeners: UnlistenFn[]) {
       fn();
     } catch {}
   });
+}
+
+function activityFromStatus(status: string): ToolActivityEvent {
+  const toolMatch = status.match(/^正在调用工具[：:]\s*(.+)$/);
+  const detail = toolMatch?.[1] || (status.includes("ComfyUI") ? "comfyui" : "workflow");
+  return {
+    id: crypto.randomUUID(),
+    label: status,
+    detail,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function appendActivity(stream: ActiveStream, status: string) {
+  const last = stream.toolEvents[stream.toolEvents.length - 1];
+  if (last?.label === status) return stream.toolEvents;
+  stream.toolEvents = [...stream.toolEvents, activityFromStatus(status)];
+  return stream.toolEvents;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -312,34 +331,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   selectConversation: async (id: string) => {
+    const streamForConversation = activeStreams[id] ?? null;
     set({
       currentConversationId: id,
-      isStreaming: activeStream?.conversationId === id,
-        streamingMessageId: activeStream?.conversationId === id ? activeStream.messageId : null,
-        streamingStatus: activeStream?.conversationId === id ? get().streamingStatus : "",
+      isStreaming: !!streamForConversation,
+      streamingMessageId: streamForConversation?.messageId ?? null,
+      streamingStatus: streamForConversation?.status ?? "",
     });
     try {
       const messages = await invoke<Message[]>("get_messages", {
         conversationId: id,
       });
-      const streamForConversation = activeStream?.conversationId === id ? activeStream : null;
+      const messagesWithToolEvents = messages.map((message) =>
+        completedToolEvents[message.id] ? { ...message, toolEvents: completedToolEvents[message.id] } : message
+      );
       const restoredMessages =
         streamForConversation && !messages.some((message) => message.id === streamForConversation.messageId)
           ? [
-              ...messages,
+              ...messagesWithToolEvents,
               {
                 id: streamForConversation.messageId,
                 role: "assistant" as const,
                 content: streamForConversation.content,
                 createdAt: streamForConversation.createdAt,
+                toolEvents: streamForConversation.toolEvents,
               },
             ]
-          : messages;
+          : messagesWithToolEvents;
       set({
         messages: restoredMessages,
         isStreaming: !!streamForConversation,
         streamingMessageId: streamForConversation?.messageId ?? null,
-        streamingStatus: streamForConversation ? get().streamingStatus : "",
+        streamingStatus: streamForConversation?.status ?? "",
       });
     } catch (e) {
       console.error("Failed to load messages:", e);
@@ -348,6 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteConversation: async (id: string) => {
     await invoke("delete_conversation", { conversationId: id });
+    delete activeStreams[id];
     const state = get();
     const remaining = state.conversations.filter((c) => c.id !== id);
     set({
@@ -355,16 +379,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentConversationId:
         state.currentConversationId === id ? null : state.currentConversationId,
       messages: state.currentConversationId === id ? [] : state.messages,
-      isStreaming: activeStream?.conversationId === id ? false : state.isStreaming,
+      isStreaming: state.currentConversationId === id ? false : state.isStreaming,
       activeStreamingConversationId:
-        activeStream?.conversationId === id ? null : state.activeStreamingConversationId,
+        state.activeStreamingConversationId === id ? null : state.activeStreamingConversationId,
       streamingMessageId:
-        activeStream?.conversationId === id ? null : state.streamingMessageId,
-      streamingStatus: activeStream?.conversationId === id ? "" : state.streamingStatus,
+        state.currentConversationId === id ? null : state.streamingMessageId,
+      streamingStatus: state.currentConversationId === id ? "" : state.streamingStatus,
     });
-    if (activeStream?.conversationId === id) {
-      activeStream = null;
-    }
   },
 
   sendMessage: async (content: string, options?: SendMessageOptions) => {
@@ -372,13 +393,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (
       !state.currentConversationId ||
       !state.sidecarReady ||
-      state.activeStreamingConversationId
+      activeStreams[state.currentConversationId]
     ) {
       return;
     }
 
     const conversationId = state.currentConversationId;
-    const gen = ++streamGeneration;
     const imagePaths = [...state.attachedImages];
 
     const userMessage: Message = {
@@ -399,12 +419,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       content: "",
       createdAt: streamCreatedAt,
     };
-    activeStream = {
-      generation: gen,
+    activeStreams[conversationId] = {
       conversationId,
       messageId: streamMsgId,
       content: "",
       createdAt: streamCreatedAt,
+      toolEvents: [],
+      status: "",
     };
 
     set((s) => {
@@ -424,13 +445,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     let fullContent = "";
 
-    const unlistenChunk = await listen<{ token: string }>(
+    const unlistenChunk = await listen<{ conversationId?: string; token: string }>(
       "chat-chunk",
       (event) => {
-        if (streamGeneration !== gen) return;
+        if (event.payload.conversationId !== conversationId) return;
         fullContent += event.payload.token;
-        if (activeStream?.generation === gen) {
-          activeStream.content = fullContent;
+        const stream = activeStreams[conversationId];
+        if (stream) {
+          stream.content = fullContent;
         }
         if (get().currentConversationId !== conversationId) return;
         set((s) => ({
@@ -441,26 +463,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     );
 
-    const unlistenStatus = await listen<{ status?: string; description?: string }>(
+    const unlistenStatus = await listen<{ conversationId?: string; status?: string; description?: string }>(
       "chat-status",
       (event) => {
-        if (streamGeneration !== gen) return;
+        if (event.payload.conversationId !== conversationId) return;
         const status = event.payload.description || event.payload.status || "";
+        const stream = activeStreams[conversationId];
+        if (!stream) return;
+        stream.status = status;
+        const toolEvents = appendActivity(stream, status);
         if (get().currentConversationId !== conversationId) return;
-        set({ streamingStatus: status });
+        set((s) => ({
+          streamingStatus: status,
+          messages: s.messages.map((m) =>
+            m.id === streamMsgId ? { ...m, toolEvents } : m
+          ),
+        }));
       }
     );
 
     const unlistenDone = await listen<{
+      conversationId?: string;
       done?: boolean;
       message_id?: string;
       content?: string;
       saved_memories?: string[];
     }>("chat-done", (event) => {
-      if (streamGeneration !== gen) {
-        cleanupListeners([unlistenChunk, unlistenStatus, unlistenDone, unlistenError]);
-        return;
-      }
+      if (event.payload.conversationId !== conversationId) return;
 
       const savedMemories = event.payload?.saved_memories;
       if (savedMemories && savedMemories.length > 0) {
@@ -474,21 +503,23 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const finalContent = event.payload?.content ?? fullContent;
       const serverMessageId = event.payload?.message_id;
-      if (activeStream?.generation === gen) {
-        activeStream = null;
+      const finalToolEvents = activeStreams[conversationId]?.toolEvents ?? [];
+      if (serverMessageId && finalToolEvents.length > 0) {
+        completedToolEvents[serverMessageId] = finalToolEvents;
       }
+      delete activeStreams[conversationId];
       set((s) => {
         const isCurrentConversation = s.currentConversationId === conversationId;
         return {
           messages: isCurrentConversation
             ? s.messages.map((m) =>
-                m.id === streamMsgId ? { ...m, id: serverMessageId || m.id, content: finalContent } : m
+                m.id === streamMsgId ? { ...m, id: serverMessageId || m.id, content: finalContent, toolEvents: finalToolEvents } : m
               )
             : s.messages,
-          isStreaming: false,
-          activeStreamingConversationId: null,
-          streamingMessageId: null,
-          streamingStatus: "",
+          isStreaming: isCurrentConversation ? false : s.isStreaming,
+          activeStreamingConversationId: isCurrentConversation ? null : s.activeStreamingConversationId,
+          streamingMessageId: isCurrentConversation ? null : s.streamingMessageId,
+          streamingStatus: isCurrentConversation ? "" : s.streamingStatus,
         };
       });
 
@@ -496,35 +527,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       cleanupListeners([unlistenChunk, unlistenStatus, unlistenDone, unlistenError]);
     });
 
-    const unlistenError = await listen<{ error: string }>(
+    const unlistenError = await listen<{ conversationId?: string; error: string }>(
       "chat-error",
       (event) => {
-        if (streamGeneration !== gen) {
-          cleanupListeners([unlistenChunk, unlistenStatus, unlistenDone, unlistenError]);
-          return;
-        }
+        if (event.payload.conversationId !== conversationId) return;
         const errorContent = fullContent
           ? fullContent +
             (get().language === "zh" ? "\n\n[\u54cd\u5e94\u4e2d\u65ad \u2014 " : "\n\n[Response interrupted - ") +
             event.payload.error +
             "]"
           : (get().language === "zh" ? "[\u53d1\u9001\u5931\u8d25 \u2014 " : "[Send failed - ") + event.payload.error + "]";
-        if (activeStream?.generation === gen) {
-          activeStream = null;
-        }
+        const finalToolEvents = activeStreams[conversationId]?.toolEvents ?? [];
+        delete activeStreams[conversationId];
         if (get().currentConversationId !== conversationId) {
-          set({
-            isStreaming: false,
-            activeStreamingConversationId: null,
-            streamingMessageId: null,
-            streamingStatus: "",
-          });
           cleanupListeners([unlistenChunk, unlistenStatus, unlistenDone, unlistenError]);
           return;
         }
         set((s) => ({
           messages: s.messages.map((m) =>
-            m.id === streamMsgId ? { ...m, content: errorContent } : m
+            m.id === streamMsgId ? { ...m, content: errorContent, toolEvents: finalToolEvents } : m
           ),
           isStreaming: false,
           activeStreamingConversationId: null,
@@ -550,7 +571,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch {
       cleanupListeners([unlistenChunk, unlistenStatus, unlistenDone, unlistenError]);
-      if (streamGeneration !== gen) return;
+      const finalToolEvents = activeStreams[conversationId]?.toolEvents ?? [];
+      delete activeStreams[conversationId];
       if (!fullContent) {
         try {
           const fallbackResult = await invoke<Message>("send_message", {
@@ -569,27 +591,22 @@ export const useAppStore = create<AppState>((set, get) => ({
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === streamMsgId
-                ? { ...m, id: fallbackResult.id, content: fallbackResult.content }
+                ? { ...m, id: fallbackResult.id, content: fallbackResult.content, toolEvents: finalToolEvents }
                 : m
             ),
-            isStreaming: false,
-            activeStreamingConversationId: null,
-            streamingMessageId: null,
-            streamingStatus: "",
+            isStreaming: s.currentConversationId === conversationId ? false : s.isStreaming,
+            activeStreamingConversationId: s.currentConversationId === conversationId ? null : s.activeStreamingConversationId,
+            streamingMessageId: s.currentConversationId === conversationId ? null : s.streamingMessageId,
+            streamingStatus: s.currentConversationId === conversationId ? "" : s.streamingStatus,
           }));
-          if (activeStream?.generation === gen) {
-            activeStream = null;
-          }
           get().loadConversations();
         } catch {
-          if (activeStream?.generation === gen) {
-            activeStream = null;
-          }
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === streamMsgId
                 ? {
                     ...m,
+                  toolEvents: finalToolEvents,
                   content:
                       get().language === "zh"
                         ? "[\u53d1\u9001\u5931\u8d25 \u2014 \u8bf7\u68c0\u67e5\u540e\u7aef\u670d\u52a1\u548c\u6a21\u578b\u914d\u7f6e]"
@@ -597,24 +614,21 @@ export const useAppStore = create<AppState>((set, get) => ({
                   }
                 : m
             ),
-            isStreaming: false,
-            activeStreamingConversationId: null,
-            streamingMessageId: null,
-            streamingStatus: "",
+            isStreaming: s.currentConversationId === conversationId ? false : s.isStreaming,
+            activeStreamingConversationId: s.currentConversationId === conversationId ? null : s.activeStreamingConversationId,
+            streamingMessageId: s.currentConversationId === conversationId ? null : s.streamingMessageId,
+            streamingStatus: s.currentConversationId === conversationId ? "" : s.streamingStatus,
           }));
         }
       } else {
-        if (activeStream?.generation === gen) {
-          activeStream = null;
-        }
         set((s) => ({
           messages: s.messages.map((m) =>
-            m.id === streamMsgId ? { ...m, content: fullContent } : m
+            m.id === streamMsgId ? { ...m, content: fullContent, toolEvents: finalToolEvents } : m
           ),
-          isStreaming: false,
-          activeStreamingConversationId: null,
-          streamingMessageId: null,
-          streamingStatus: "",
+          isStreaming: s.currentConversationId === conversationId ? false : s.isStreaming,
+          activeStreamingConversationId: s.currentConversationId === conversationId ? null : s.activeStreamingConversationId,
+          streamingMessageId: s.currentConversationId === conversationId ? null : s.streamingMessageId,
+          streamingStatus: s.currentConversationId === conversationId ? "" : s.streamingStatus,
         }));
       }
     }

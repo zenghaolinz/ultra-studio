@@ -311,9 +311,8 @@ export default function Settings({ onClose }: Props) {
     fontSize: 13,
     outline: "none",
   };
-
   return (
-    <div style={{ padding: 20, position: "relative" }}>
+    <div className="settings-panel">
       {toast && (
         <div
           className="anim-fade-in"
@@ -334,12 +333,12 @@ export default function Settings({ onClose }: Props) {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="settings-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <div className="brand-mark" style={{ width: 32, height: 32 }}>
             <Icon name="settings" size={17} />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h2 style={{ fontSize: 16, fontWeight: 820, color: "var(--text-primary)", margin: 0 }}>{text("设置", "Settings")}</h2>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{text("模型、记忆与助手人设", "Models, memory, and assistant persona")}</div>
           </div>

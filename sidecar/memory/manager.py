@@ -355,52 +355,56 @@ def handle_save_memory(
 
 def handle_generate_3d_from_text(prompt: str, quality_mode: str = "fast") -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_generate_3d_text
-        import json
-        return json.loads(tool_generate_3d_text(prompt, quality_mode))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_generate_3d_text
+            import json
+            return json.loads(tool_generate_3d_text(prompt, quality_mode))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 def handle_generate_3d_from_image(image_path: str) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_generate_3d_image
-        import json
-        return json.loads(tool_generate_3d_image(image_path))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_generate_3d_image
+            import json
+            return json.loads(tool_generate_3d_image(image_path))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 def handle_generate_3d_fusion(img1: str, img2: str, prompt: str) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_generate_3d_dual
-        import json
-        return json.loads(tool_generate_3d_dual(img1, img2, prompt))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_generate_3d_dual
+            import json
+            return json.loads(tool_generate_3d_dual(img1, img2, prompt))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 def handle_generate_multiview_images_from_image(image_path: str, quality_mode: str = "fast") -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_generate_multiview_images
-        import json
-        return json.loads(tool_generate_multiview_images(image_path, quality_mode))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_generate_multiview_images
+            import json
+            return json.loads(tool_generate_multiview_images(image_path, quality_mode))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -412,39 +416,42 @@ def handle_generate_3d_from_generated_multiview(
     quality_mode: str = "fast",
 ) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_generate_3d_multiview
-        import json
-        return json.loads(tool_generate_3d_multiview(front_path, left_path, back_path, quality_mode))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_generate_3d_multiview
+            import json
+            return json.loads(tool_generate_3d_multiview(front_path, left_path, back_path, quality_mode))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 def handle_modify_image(source_path: str, modification_prompt: str, denoise_strength: float = 0.5) -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_improve_image
-        import json
-        return json.loads(tool_improve_image(source_path, modification_prompt))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_improve_image
+            import json
+            return json.loads(tool_improve_image(source_path, modification_prompt))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 def handle_generate_image(prompt: str, quality_mode: str = "fast") -> dict:
     try:
-        from services.generation_runtime import ensure_comfyui_ready, error_result
-        runtime = ensure_comfyui_ready()
-        if not runtime.get("ok"):
-            return error_result(runtime.get("message", "ComfyUI is not ready"))
-        from tools.comfy_client import tool_generate_image
-        import json
-        return json.loads(tool_generate_image(prompt, quality_mode))
+        from services.generation_runtime import ensure_comfyui_ready, error_result, generation_slot
+        with generation_slot():
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                return error_result(runtime.get("message", "ComfyUI is not ready"))
+            from tools.comfy_client import tool_generate_image
+            import json
+            return json.loads(tool_generate_image(prompt, quality_mode))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

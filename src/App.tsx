@@ -149,11 +149,11 @@ export default function App() {
         <aside
           className="anim-fade-in"
           style={{
-            width: 390,
+            width: 560,
             flexShrink: 0,
             background: "rgba(255, 254, 250, 0.92)",
             borderLeft: "1px solid var(--border-subtle)",
-            overflowY: "auto",
+            overflow: "hidden",
           }}
         >
           <Settings onClose={() => setShowSettings(false)} />

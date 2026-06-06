@@ -4,6 +4,14 @@ export interface Message {
   content: string;
   createdAt: string;
   images?: string[];
+  toolEvents?: ToolActivityEvent[];
+}
+
+export interface ToolActivityEvent {
+  id: string;
+  label: string;
+  detail: string;
+  createdAt: string;
 }
 
 export interface Conversation {

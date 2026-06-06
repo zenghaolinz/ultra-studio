@@ -1,3 +1,5 @@
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -5,6 +7,11 @@ from sidecar.services import generation_runtime
 
 
 class GenerationRuntimeTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        state = generation_runtime.generation_queue_state()
+        self.assertEqual(state["active"], 0)
+        self.assertEqual(state["waiting"], 0)
+
     def test_external_profile_requires_manual_start(self) -> None:
         status = {
             "running": False,
@@ -55,6 +62,38 @@ class GenerationRuntimeTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["started"])
         start.assert_called_once()
+
+    def test_generation_slot_serializes_work(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        order: list[str] = []
+
+        def first_worker() -> None:
+            with generation_runtime.generation_slot():
+                order.append("first-start")
+                entered.set()
+                release.wait(timeout=2)
+                order.append("first-end")
+
+        def second_worker() -> None:
+            entered.wait(timeout=2)
+            with generation_runtime.generation_slot():
+                order.append("second")
+
+        first = threading.Thread(target=first_worker)
+        second = threading.Thread(target=second_worker)
+        first.start()
+        self.assertTrue(entered.wait(timeout=2))
+        second.start()
+        time.sleep(0.05)
+        state = generation_runtime.generation_queue_state()
+        self.assertEqual(state["active"], 1)
+        self.assertEqual(state["waiting"], 1)
+        release.set()
+        first.join(timeout=2)
+        second.join(timeout=2)
+
+        self.assertEqual(order, ["first-start", "first-end", "second"])
 
 
 if __name__ == "__main__":
