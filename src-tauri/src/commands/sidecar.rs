@@ -477,6 +477,29 @@ pub struct ComfyUiStatus {
     pub error: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComfyUiProfile {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub selected: Option<bool>,
+    pub valid: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComfyUiProfilesResponse {
+    pub profiles: Vec<ComfyUiProfile>,
+    pub status: ComfyUiStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComfyUiProfileSaveRequest {
+    pub id: Option<String>,
+    pub name: String,
+    pub path: String,
+    pub select: bool,
+}
+
 #[tauri::command]
 pub async fn get_comfyui_status(state: State<'_, SidecarState>) -> Result<ComfyUiStatus, String> {
     let client = &state.client;
@@ -490,10 +513,71 @@ pub async fn get_comfyui_status(state: State<'_, SidecarState>) -> Result<ComfyU
 }
 
 #[tauri::command]
+pub async fn list_comfyui_profiles(state: State<'_, SidecarState>) -> Result<ComfyUiProfilesResponse, String> {
+    let client = &state.client;
+    let resp = client
+        .get(format!("{}/api/comfyui/profiles", SIDECAR_URL))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let profiles: ComfyUiProfilesResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    Ok(profiles)
+}
+
+#[tauri::command]
+pub async fn save_comfyui_profile(
+    state: State<'_, SidecarState>,
+    profile: ComfyUiProfileSaveRequest,
+) -> Result<ComfyUiProfilesResponse, String> {
+    let client = &state.client;
+    let resp = client
+        .post(format!("{}/api/comfyui/profiles", SIDECAR_URL))
+        .json(&profile)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".into());
+    if !status.is_success() {
+        return Err(format!("Save ComfyUI profile failed ({}): {}", status, body));
+    }
+    serde_json::from_str(&body).map_err(|e| format!("Parse error: {}", e))
+}
+
+#[tauri::command]
+pub async fn select_comfyui_profile(state: State<'_, SidecarState>, id: String) -> Result<ComfyUiProfilesResponse, String> {
+    let client = &state.client;
+    let resp = client
+        .put(format!("{}/api/comfyui/profiles/select", SIDECAR_URL))
+        .json(&serde_json::json!({ "id": id }))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".into());
+    if !status.is_success() {
+        return Err(format!("Select ComfyUI profile failed ({}): {}", status, body));
+    }
+    serde_json::from_str(&body).map_err(|e| format!("Parse error: {}", e))
+}
+
+#[tauri::command]
 pub async fn start_comfyui(state: State<'_, SidecarState>) -> Result<ComfyUiStatus, String> {
     let client = &state.client;
     let resp = client
         .post(format!("{}/api/comfyui/start", SIDECAR_URL))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let status: ComfyUiStatus = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn stop_comfyui(state: State<'_, SidecarState>) -> Result<ComfyUiStatus, String> {
+    let client = &state.client;
+    let resp = client
+        .post(format!("{}/api/comfyui/stop", SIDECAR_URL))
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;

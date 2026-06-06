@@ -194,6 +194,19 @@ export interface ComfyUiStatus {
   error?: string;
 }
 
+export interface ComfyUiProfile {
+  id: string;
+  name: string;
+  path: string;
+  selected?: boolean;
+  valid?: boolean;
+}
+
+export interface ComfyUiProfilesResponse {
+  profiles: ComfyUiProfile[];
+  status: ComfyUiStatus;
+}
+
 export type DiagnosticStatus = "ok" | "warn" | "error";
 
 export interface DiagnosticItem {

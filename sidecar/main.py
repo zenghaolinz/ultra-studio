@@ -12,21 +12,12 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from db.sqlite import init_db, close_db
-from routes import chat, memory, config, persona, asset_3d, conversations
+from routes import chat, memory, config, persona, asset_3d, conversations, comfyui
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-
-    def start_comfy():
-        try:
-            from tools.comfyui_manager import start_comfyui
-            start_comfyui()
-        except Exception as e:
-            print(f"[main] ComfyUI auto-start failed: {e}")
-
-    threading.Thread(target=start_comfy, daemon=True).start()
 
     yield
 
@@ -59,35 +50,7 @@ app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(persona.router, prefix="/api/config", tags=["persona"])
 app.include_router(asset_3d.router)
-
-
-@app.get("/api/comfyui/status")
-async def comfyui_status():
-    try:
-        from tools.comfyui_manager import get_status
-        return get_status()
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.post("/api/comfyui/start")
-async def comfyui_start():
-    try:
-        from tools.comfyui_manager import start_comfyui, get_status
-        ok = start_comfyui()
-        return {"started": ok, **get_status()}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.post("/api/comfyui/stop")
-async def comfyui_stop():
-    try:
-        from tools.comfyui_manager import stop_comfyui, get_status
-        stop_comfyui()
-        return {"stopped": True, **get_status()}
-    except Exception as e:
-        return {"error": str(e)}
+app.include_router(comfyui.router, prefix="/api/comfyui", tags=["comfyui"])
 
 
 @app.post("/api/app/shutdown")

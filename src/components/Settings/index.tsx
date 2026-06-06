@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { EmbeddingConfig, LocalProvider, ModelConfig, Persona, ProviderType } from "../../types";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { ComfyUiProfile, ComfyUiProfilesResponse, ComfyUiStatus, EmbeddingConfig, LocalProvider, ModelConfig, Persona, ProviderType } from "../../types";
 import { PROVIDER_PRESETS } from "../../types";
 import Icon from "../Icon";
 import { useAppStore } from "../../stores/appStore";
@@ -23,7 +24,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 export default function Settings({ onClose }: Props) {
   const { language, text } = useLanguage();
-  const [tab, setTab] = useState<"persona" | "chat" | "embedding" | "memory" | "diagnostics">("chat");
+  const [tab, setTab] = useState<"persona" | "chat" | "embedding" | "comfyui" | "memory" | "diagnostics">("chat");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [embeddings, setEmbeddings] = useState<EmbeddingConfig[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -44,6 +45,11 @@ export default function Settings({ onClose }: Props) {
 
   const [localProviders, setLocalProviders] = useState<LocalProvider[]>([]);
   const [detecting, setDetecting] = useState(false);
+  const [comfyProfiles, setComfyProfiles] = useState<ComfyUiProfile[]>([]);
+  const [comfyStatus, setComfyStatus] = useState<ComfyUiStatus | null>(null);
+  const [comfyName, setComfyName] = useState("Default");
+  const [comfyPath, setComfyPath] = useState("");
+  const [comfyBusy, setComfyBusy] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -69,6 +75,21 @@ export default function Settings({ onClose }: Props) {
     } catch {}
   }, [loadModelConfigs, language]);
 
+  const loadComfyProfiles = useCallback(async () => {
+    try {
+      const result = await invoke<ComfyUiProfilesResponse>("list_comfyui_profiles");
+      setComfyProfiles(result.profiles);
+      setComfyStatus(result.status);
+      const selected = result.profiles.find((p) => p.selected) || result.profiles[0];
+      if (selected) {
+        setComfyName(selected.name);
+        setComfyPath(selected.path);
+      }
+    } catch (e: any) {
+      showToast(text("加载 ComfyUI 配置失败：", "Failed to load ComfyUI configuration: ") + (e?.message || String(e)));
+    }
+  }, [language]);
+
   const detectLocal = useCallback(async () => {
     setDetecting(true);
     try {
@@ -84,7 +105,80 @@ export default function Settings({ onClose }: Props) {
   useEffect(() => {
     loadConfigs();
     detectLocal();
-  }, [loadConfigs, detectLocal]);
+    loadComfyProfiles();
+  }, [loadConfigs, detectLocal, loadComfyProfiles]);
+
+  const chooseComfyPath = async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected || Array.isArray(selected)) return;
+    setComfyPath(selected);
+    if (!comfyName.trim()) setComfyName(selected.split(/[\\/]/).pop() || "ComfyUI");
+  };
+
+  const saveComfyProfile = async () => {
+    if (!comfyPath.trim()) {
+      showToast(text("请选择 ComfyUI 目录", "Choose a ComfyUI folder"));
+      return;
+    }
+    setComfyBusy(true);
+    try {
+      const result = await invoke<ComfyUiProfilesResponse>("save_comfyui_profile", {
+        profile: { name: comfyName.trim() || "ComfyUI", path: comfyPath.trim(), select: true },
+      });
+      setComfyProfiles(result.profiles);
+      setComfyStatus(result.status);
+      showToast(text("ComfyUI 版本已保存", "ComfyUI version saved"));
+    } catch (e: any) {
+      showToast(text("保存失败：", "Save failed: ") + (e?.message || String(e)));
+    } finally {
+      setComfyBusy(false);
+    }
+  };
+
+  const selectComfyProfile = async (id: string) => {
+    setComfyBusy(true);
+    try {
+      const result = await invoke<ComfyUiProfilesResponse>("select_comfyui_profile", { id });
+      setComfyProfiles(result.profiles);
+      setComfyStatus(result.status);
+      const selected = result.profiles.find((p) => p.selected);
+      if (selected) {
+        setComfyName(selected.name);
+        setComfyPath(selected.path);
+      }
+      showToast(text("已切换 ComfyUI 版本", "ComfyUI version selected"));
+    } catch (e: any) {
+      showToast(text("切换失败：", "Switch failed: ") + (e?.message || String(e)));
+    } finally {
+      setComfyBusy(false);
+    }
+  };
+
+  const startComfy = async () => {
+    setComfyBusy(true);
+    try {
+      const next = await invoke<ComfyUiStatus>("start_comfyui");
+      setComfyStatus(next);
+      showToast(next.error ? text("启动失败", "Start failed") : text("ComfyUI 正在启动", "ComfyUI is starting"));
+    } catch (e: any) {
+      showToast(text("启动失败：", "Start failed: ") + (e?.message || String(e)));
+    } finally {
+      setComfyBusy(false);
+    }
+  };
+
+  const stopComfy = async () => {
+    setComfyBusy(true);
+    try {
+      const next = await invoke<ComfyUiStatus>("stop_comfyui");
+      setComfyStatus(next);
+      showToast(text("ComfyUI 已停止", "ComfyUI stopped"));
+    } catch (e: any) {
+      showToast(text("停止失败：", "Stop failed: ") + (e?.message || String(e)));
+    } finally {
+      setComfyBusy(false);
+    }
+  };
 
   const savePersona = async () => {
     try {
@@ -251,6 +345,7 @@ export default function Settings({ onClose }: Props) {
           { k: "persona" as const, l: text("人设", "Persona") },
           { k: "chat" as const, l: text("聊天", "Chat") },
           { k: "embedding" as const, l: "Embedding" },
+          { k: "comfyui" as const, l: "ComfyUI" },
           { k: "memory" as const, l: text("记忆", "Memory") },
           { k: "diagnostics" as const, l: text("诊断", "Diagnostics") },
         ].map((t) => (
@@ -332,8 +427,186 @@ export default function Settings({ onClose }: Props) {
         </section>
       )}
 
+      {tab === "comfyui" && (
+        <ComfyUiSettings
+          profiles={comfyProfiles}
+          status={comfyStatus}
+          name={comfyName}
+          path={comfyPath}
+          busy={comfyBusy}
+          inputStyle={inputStyle}
+          onNameChange={setComfyName}
+          onPathChange={setComfyPath}
+          onBrowse={chooseComfyPath}
+          onSave={saveComfyProfile}
+          onSelect={selectComfyProfile}
+          onStart={startComfy}
+          onStop={stopComfy}
+          onRefresh={loadComfyProfiles}
+        />
+      )}
+
       {tab === "memory" && <MemorySettings />}
       {tab === "diagnostics" && <DiagnosticsPanel />}
+    </div>
+  );
+}
+
+function ComfyUiSettings({
+  profiles,
+  status,
+  name,
+  path,
+  busy,
+  inputStyle,
+  onNameChange,
+  onPathChange,
+  onBrowse,
+  onSave,
+  onSelect,
+  onStart,
+  onStop,
+  onRefresh,
+}: {
+  profiles: ComfyUiProfile[];
+  status: ComfyUiStatus | null;
+  name: string;
+  path: string;
+  busy: boolean;
+  inputStyle: React.CSSProperties;
+  onNameChange: (v: string) => void;
+  onPathChange: (v: string) => void;
+  onBrowse: () => void;
+  onSave: () => void;
+  onSelect: (id: string) => void;
+  onStart: () => void;
+  onStop: () => void;
+  onRefresh: () => void;
+}) {
+  const { text } = useLanguage();
+  const selected = profiles.find((p) => p.selected);
+  const stateLabel = status?.ready
+    ? text("已就绪", "Ready")
+    : status?.running || status?.process_alive
+      ? text("启动中", "Starting")
+      : text("未启动", "Stopped");
+  const stateColor = status?.ready
+    ? "var(--success)"
+    : status?.running || status?.process_alive
+      ? "var(--accent-warm)"
+      : "var(--text-muted)";
+
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="surface" style={{ borderRadius: 14, padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 780 }}>{text("运行状态", "Runtime status")}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+              {selected ? `${selected.name} · ${selected.path}` : text("尚未选择版本", "No version selected")}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: stateColor }} />
+            <span style={{ fontSize: 12, fontWeight: 760, color: stateColor }}>{stateLabel}</span>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+          <StatusPill label={text("端口", "Port")} value={status?.running ? text("8188 已监听", "8188 listening") : text("未监听", "Not listening")} ok={!!status?.running} />
+          <StatusPill label={text("进程", "Process")} value={status?.process_alive ? text("程序管理", "Managed") : text("未跟踪", "Untracked")} ok={!!status?.process_alive || !!status?.ready} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <button className="primary-button" onClick={onStart} disabled={busy || status?.ready || !selected} style={{ height: 36 }}>
+            <Icon name="play" size={15} />
+            {text("启动", "Start")}
+          </button>
+          <button className="tool-button" onClick={onStop} disabled={busy || (!status?.running && !status?.process_alive)} style={{ height: 36 }}>
+            <Icon name="stop" size={14} />
+            {text("停止", "Stop")}
+          </button>
+          <button className="tool-button" onClick={onRefresh} disabled={busy} style={{ height: 36 }}>
+            <Icon name="refresh" size={14} />
+            {text("刷新", "Refresh")}
+          </button>
+        </div>
+      </div>
+
+      <div className="surface" style={{ borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 780 }}>{text("ComfyUI 版本", "ComfyUI versions")}</div>
+        {profiles.length > 0 ? (
+          profiles.map((profile) => (
+            <button
+              key={profile.id}
+              className="tool-button"
+              onClick={() => onSelect(profile.id)}
+              disabled={busy}
+              style={{
+                minHeight: 42,
+                height: "auto",
+                justifyContent: "flex-start",
+                padding: "8px 10px",
+                background: profile.selected ? "var(--accent-muted)" : "rgba(255,254,250,0.54)",
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: profile.valid ? "var(--success)" : "var(--danger)", flexShrink: 0 }} />
+              <span style={{ minWidth: 0, textAlign: "left" }}>
+                <span style={{ display: "block", fontSize: 12, fontWeight: 760 }}>{profile.name}</span>
+                <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.path}</span>
+              </span>
+            </button>
+          ))
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+            {text("添加一个 ComfyUI 目录后再启动。应用启动时不会自动启动 ComfyUI。", "Add a ComfyUI folder before starting. The app no longer auto-starts ComfyUI.")}
+          </div>
+        )}
+      </div>
+
+      <div className="surface" style={{ borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 780 }}>{text("添加或更新版本", "Add or update version")}</div>
+        <input style={inputStyle} value={name} onChange={(e) => onNameChange(e.target.value)} placeholder={text("版本名称，例如 4B 快速版 / 9B 高质量版", "Version name, e.g. 4B Fast or 9B Quality")} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={{ ...inputStyle, flex: 1 }} value={path} onChange={(e) => onPathChange(e.target.value)} placeholder={text("ComfyUI Windows Portable 目录", "ComfyUI Windows Portable folder")} />
+          <button className="tool-button" onClick={onBrowse} disabled={busy} style={{ height: 36, padding: "0 10px" }}>
+            <Icon name="file" size={14} />
+            {text("选择", "Choose")}
+          </button>
+        </div>
+        <button className="primary-button" onClick={onSave} disabled={busy} style={{ height: 36 }}>
+          <Icon name="check" size={15} />
+          {text("保存并选中", "Save and select")}
+        </button>
+      </div>
+
+      {status?.recent_logs && status.recent_logs.length > 0 && (
+        <div
+          style={{
+            maxHeight: 170,
+            overflow: "auto",
+            padding: 10,
+            borderRadius: 10,
+            background: "var(--bg-input)",
+            color: "var(--text-secondary)",
+            fontFamily: "Consolas, monospace",
+            fontSize: 11,
+            lineHeight: 1.55,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {status.recent_logs.slice(-10).join("\n")}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StatusPill({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div style={{ border: "1px solid var(--border-subtle)", borderRadius: 10, padding: "8px 10px" }}>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 12, color: ok ? "var(--success)" : "var(--text-secondary)", fontWeight: 700 }}>{value}</div>
     </div>
   );
 }

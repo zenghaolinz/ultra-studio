@@ -1,10 +1,13 @@
+import json
 import os
+import re
 import sys
 import time
 import socket
 import configparser
 import subprocess
 import threading
+from pathlib import Path
 from typing import Optional, Tuple
 
 
@@ -41,19 +44,117 @@ def _read_config():
 
 def get_comfyui_path() -> str:
     cfg = _read_config()
+    selected_id = cfg.get("ComfyUI", "selected", fallback="").strip()
+    if selected_id:
+        for profile in list_comfyui_profiles():
+            if profile["id"] == selected_id:
+                return profile["path"]
     return cfg.get("ComfyUI", "path", fallback="").strip()
 
 
-def set_comfyui_path(path: str):
+def set_comfyui_path(path: str, name: str = "Default"):
     cfg = _read_config()
     if "ComfyUI" not in cfg:
         cfg.add_section("ComfyUI")
     cfg.set("ComfyUI", "path", path)
+    cfg.set("ComfyUI", "selected", "default")
+    profiles = _profiles_from_config(cfg)
+    profiles = [p for p in profiles if p.get("id") != "default"]
+    profiles.insert(0, {"id": "default", "name": name or "Default", "path": path})
+    cfg.set("ComfyUI", "profiles", json.dumps(profiles, ensure_ascii=False))
     if not cfg.has_option("ComfyUI", "port"):
         cfg.set("ComfyUI", "port", str(COMFYUI_PORT))
+    _write_config(cfg)
+
+
+def _write_config(cfg):
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         cfg.write(f)
+
+
+def _slugify_profile_id(name: str, fallback: str = "comfyui") -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", name.strip().lower()).strip("-")
+    return cleaned or fallback
+
+
+def _profiles_from_config(cfg) -> list[dict]:
+    raw = cfg.get("ComfyUI", "profiles", fallback="").strip()
+    profiles: list[dict] = []
+    if raw:
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, list):
+                for item in payload:
+                    if not isinstance(item, dict):
+                        continue
+                    profile_id = str(item.get("id") or "").strip()
+                    name = str(item.get("name") or profile_id or "ComfyUI").strip()
+                    path = str(item.get("path") or "").strip()
+                    if profile_id and path:
+                        profiles.append({"id": profile_id, "name": name, "path": path})
+        except Exception:
+            pass
+
+    legacy_path = cfg.get("ComfyUI", "path", fallback="").strip()
+    if legacy_path and not any(p["path"] == legacy_path for p in profiles):
+        profiles.insert(0, {"id": "default", "name": "Default", "path": legacy_path})
+    return profiles
+
+
+def list_comfyui_profiles() -> list[dict]:
+    cfg = _read_config()
+    selected_id = cfg.get("ComfyUI", "selected", fallback="").strip()
+    profiles = _profiles_from_config(cfg)
+    return [
+        {
+            **profile,
+            "selected": profile["id"] == selected_id or (not selected_id and index == 0),
+            "valid": is_valid_comfyui_path(profile["path"]),
+        }
+        for index, profile in enumerate(profiles)
+    ]
+
+
+def save_comfyui_profile(name: str, path: str, profile_id: str | None = None, select: bool = True) -> dict:
+    cfg = _read_config()
+    if "ComfyUI" not in cfg:
+        cfg.add_section("ComfyUI")
+    profiles = _profiles_from_config(cfg)
+    clean_name = (name or Path(path).name or "ComfyUI").strip()
+    base_id = profile_id or _slugify_profile_id(clean_name)
+    profile_id = base_id
+    existing_ids = {p["id"] for p in profiles if p["id"] != profile_id}
+    index = 2
+    while profile_id in existing_ids:
+        profile_id = f"{base_id}-{index}"
+        index += 1
+    profile = {"id": profile_id, "name": clean_name, "path": path.strip()}
+    profiles = [p for p in profiles if p["id"] != profile_id and p["path"] != profile["path"]]
+    profiles.append(profile)
+    cfg.set("ComfyUI", "profiles", json.dumps(profiles, ensure_ascii=False))
+    if select:
+        cfg.set("ComfyUI", "selected", profile_id)
+        cfg.set("ComfyUI", "path", profile["path"])
+    if not cfg.has_option("ComfyUI", "port"):
+        cfg.set("ComfyUI", "port", str(COMFYUI_PORT))
+    _write_config(cfg)
+    return {**profile, "selected": select, "valid": is_valid_comfyui_path(profile["path"])}
+
+
+def select_comfyui_profile(profile_id: str) -> dict | None:
+    cfg = _read_config()
+    profiles = _profiles_from_config(cfg)
+    for profile in profiles:
+        if profile["id"] == profile_id:
+            if "ComfyUI" not in cfg:
+                cfg.add_section("ComfyUI")
+            cfg.set("ComfyUI", "selected", profile_id)
+            cfg.set("ComfyUI", "path", profile["path"])
+            cfg.set("ComfyUI", "profiles", json.dumps(profiles, ensure_ascii=False))
+            _write_config(cfg)
+            return {**profile, "selected": True, "valid": is_valid_comfyui_path(profile["path"])}
+    return None
 
 
 def verify_comfyui_running(host: str = "127.0.0.1", port: int = COMFYUI_PORT) -> bool:
