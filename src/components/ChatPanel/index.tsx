@@ -489,6 +489,7 @@ function stripPrivateGenerationLines(content: string) {
   return content
     .split("\n")
     .filter((line) => !/^\s*(?:生成图片|编辑后图片|使用提示词)\s*[:：]/.test(line))
+    .filter((line) => !/^\s*(?:任务|Task)\s*ID\s*[:：]\s*`?[a-f0-9]{20,}`?\s*$/i.test(line))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -694,9 +695,6 @@ function ChatGenerationTaskCard({ task, onToast }: { task: GenerationTask; onToa
         <span style={{ width: 9, height: 9, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
         <b style={{ fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{title}</b>
         <span style={{ fontSize: 11, color: statusColor, fontWeight: 800 }}>{statusText}</span>
-      </div>
-      <div style={{ marginTop: 7, fontSize: 12, color: "var(--text-muted)" }}>
-        {text("\u4efb\u52a1 ID\uff1a", "Task ID: ")}<code>{task.id}</code>
       </div>
       {task.error && <div style={{ marginTop: 7, fontSize: 12, color: "var(--danger)", lineHeight: 1.5 }}>{task.error}</div>}
       {output && <div style={{ marginTop: 7, fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{output}</div>}
