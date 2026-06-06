@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from db.sqlite import init_db, close_db
-from routes import chat, memory, config, persona, asset_3d
+from routes import chat, memory, config, persona, asset_3d, conversations
 
 
 @asynccontextmanager
@@ -54,6 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(conversations.router, prefix="/api/chat", tags=["conversations"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(persona.router, prefix="/api/config", tags=["persona"])

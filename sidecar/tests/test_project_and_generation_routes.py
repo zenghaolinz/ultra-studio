@@ -12,7 +12,7 @@ SIDECAR_DIR = Path(__file__).resolve().parents[1]
 if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
-from routes import asset_3d, chat
+from routes import asset_3d, conversations as conversation_routes
 from schemas import ConversationCreate
 
 
@@ -40,7 +40,7 @@ class ProjectRouteTests(unittest.IsolatedAsyncioTestCase):
             );
             """
         )
-        self.get_db_patch = patch.object(chat, "get_db", AsyncMock(return_value=self.db))
+        self.get_db_patch = patch.object(conversation_routes, "get_db", AsyncMock(return_value=self.db))
         self.get_db_patch.start()
 
     async def asyncTearDown(self) -> None:
@@ -58,7 +58,7 @@ class ProjectRouteTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.db.commit()
 
-        await chat.delete_project("project-1")
+        await conversation_routes.delete_project("project-1")
 
         conversations = await self.db.execute_fetchall("SELECT id FROM conversations")
         messages = await self.db.execute_fetchall("SELECT id FROM stm_entries")
@@ -67,7 +67,7 @@ class ProjectRouteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_conversation_rejects_deleted_project(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
-            await chat.create_conversation(
+            await conversation_routes.create_conversation(
                 ConversationCreate(title="Orphan", project_id="missing-project")
             )
 
