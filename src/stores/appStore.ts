@@ -123,7 +123,9 @@ function cleanupListeners(listeners: UnlistenFn[]) {
 }
 
 function activityFromStatus(status: string): ToolActivityEvent {
-  const toolMatch = status.match(/^正在调用工具[：:]\s*(.+)$/);
+  const toolMatch =
+    status.match(/^正在调用工具[：:]\s*(.+)$/) ||
+    status.match(/^Calling tool[：:]\s*(.+)$/i);
   const detail = toolMatch?.[1] || (status.includes("ComfyUI") ? "comfyui" : "workflow");
   return {
     id: crypto.randomUUID(),
@@ -138,6 +140,21 @@ function appendActivity(stream: ActiveStream, status: string) {
   if (last?.label === status) return stream.toolEvents;
   stream.toolEvents = [...stream.toolEvents, activityFromStatus(status)];
   return stream.toolEvents;
+}
+
+async function persistToolEvents(conversationId: string, messageId: string, events: ToolActivityEvent[]) {
+  if (events.length === 0) return;
+  try {
+    const saved = await invoke<ToolActivityEvent[]>("save_message_tool_events", {
+      conversationId,
+      messageId,
+      events,
+    });
+    completedToolEvents[messageId] = saved.length > 0 ? saved : events;
+  } catch (e) {
+    console.error("Failed to persist tool events:", e);
+    completedToolEvents[messageId] = events;
+  }
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -506,6 +523,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const finalToolEvents = activeStreams[conversationId]?.toolEvents ?? [];
       if (serverMessageId && finalToolEvents.length > 0) {
         completedToolEvents[serverMessageId] = finalToolEvents;
+        void persistToolEvents(conversationId, serverMessageId, finalToolEvents);
       }
       delete activeStreams[conversationId];
       set((s) => {

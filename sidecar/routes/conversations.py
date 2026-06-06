@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from db.sqlite import get_db
 from schemas import ConversationCreate, ProjectCreate
+from services.tool_activity import list_tool_events_for_messages, replace_tool_events
 
 router = APIRouter()
 
@@ -256,6 +257,7 @@ async def get_messages(conv_id: str):
         "SELECT id, conversation_id, role, content, created_at FROM stm_entries WHERE conversation_id = ? ORDER BY created_at",
         (conv_id,),
     )
+    tool_events = await list_tool_events_for_messages(db, [r[0] for r in rows])
     return [
         {
             "id": r[0],
@@ -263,9 +265,27 @@ async def get_messages(conv_id: str):
             "role": r[2],
             "content": r[3],
             "createdAt": r[4],
+            "toolEvents": tool_events.get(r[0], []),
         }
         for r in rows
     ]
+
+
+@router.post("/conversations/{conv_id}/messages/{message_id}/tool-events")
+async def save_message_tool_events(conv_id: str, message_id: str, body: dict):
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT id FROM stm_entries WHERE id = ? AND conversation_id = ? AND role = 'assistant'",
+        (message_id, conv_id),
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Assistant message not found")
+    events = body.get("events") or []
+    if not isinstance(events, list):
+        raise HTTPException(status_code=400, detail="events must be a list")
+    return {
+        "events": await replace_tool_events(db, conv_id, message_id, events),
+    }
 
 
 @router.delete("/conversations/{conv_id}")

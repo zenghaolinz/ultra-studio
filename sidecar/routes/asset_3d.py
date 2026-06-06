@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from db.sqlite import get_db
+from services.generation_runtime import generation_queue_state
 from tools.comfy_client import (
     run_pipeline,
     run_multiview_pipeline,
@@ -120,6 +121,8 @@ def _task_row_to_dict(row) -> dict:
         "id": row["id"],
         "taskType": row["task_type"],
         "status": row["status"],
+        "conversationId": row["conversation_id"] if "conversation_id" in row.keys() else None,
+        "queuePosition": row["queue_position"] if "queue_position" in row.keys() else None,
         "prompt": row["prompt"] or "",
         "qualityMode": row["quality_mode"] or "",
         "inputPaths": input_paths,
@@ -137,7 +140,7 @@ async def list_generation_tasks(limit: int = 30):
     safe_limit = max(1, min(limit, 100))
     rows = await db.execute_fetchall(
         """
-        SELECT id, task_type, status, prompt, quality_mode, input_paths, output_paths, error,
+        SELECT id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error,
                created_at, updated_at, completed_at
         FROM generation_tasks
         ORDER BY datetime(updated_at) DESC, datetime(created_at) DESC
@@ -146,6 +149,11 @@ async def list_generation_tasks(limit: int = 30):
         (safe_limit,),
     )
     return [_task_row_to_dict(row) for row in rows]
+
+
+@router.get("/queue")
+async def get_generation_queue():
+    return generation_queue_state()
 
 
 def _make_sse_stream(mode, quality_mode, prompt, img1, img2=None):

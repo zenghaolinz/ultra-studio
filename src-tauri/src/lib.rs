@@ -188,6 +188,7 @@ pub fn run() {
             commands::sidecar::create_conversation,
             commands::sidecar::delete_conversation,
             commands::sidecar::get_messages,
+            commands::sidecar::save_message_tool_events,
             commands::sidecar::send_message,
             commands::sidecar::send_stream_start,
             commands::sidecar::update_conversation_title,

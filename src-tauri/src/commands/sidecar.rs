@@ -92,6 +92,18 @@ pub struct Message {
     pub content: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    #[serde(rename = "toolEvents", default)]
+    pub tool_events: Vec<ToolActivityEvent>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ToolActivityEvent {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub detail: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -249,6 +261,35 @@ pub async fn get_messages(state: State<'_, SidecarState>, conversation_id: Strin
         .map_err(|e| e.to_string())?;
     let msgs: Vec<Message> = resp.json().await.map_err(|e| e.to_string())?;
     Ok(msgs)
+}
+
+#[tauri::command]
+pub async fn save_message_tool_events(
+    state: State<'_, SidecarState>,
+    conversation_id: String,
+    message_id: String,
+    events: Vec<ToolActivityEvent>,
+) -> Result<Vec<ToolActivityEvent>, String> {
+    check_ready(&state)?;
+    let client = &state.client;
+    let resp = client
+        .post(format!(
+            "{}/api/chat/conversations/{}/messages/{}/tool-events",
+            SIDECAR_URL, conversation_id, message_id
+        ))
+        .json(&serde_json::json!({ "events": events }))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".into());
+    if !status.is_success() {
+        return Err(format!("Save tool events failed ({}): {}", status, body));
+    }
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Parse error: {} - body: {}", e, response_excerpt(&body)))?;
+    serde_json::from_value(payload.get("events").cloned().unwrap_or_else(|| serde_json::json!([])))
+        .map_err(|e| format!("Parse error: {}", e))
 }
 
 #[tauri::command]

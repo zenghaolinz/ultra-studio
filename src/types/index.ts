@@ -172,12 +172,14 @@ export interface ThreeDGenerateResult {
   message?: string;
 }
 
-export type GenerationTaskStatus = "running" | "success" | "error" | "cancelled";
+export type GenerationTaskStatus = "queued" | "running" | "success" | "error" | "cancelled";
 
 export interface GenerationTask {
   id: string;
   taskType: string;
   status: GenerationTaskStatus;
+  conversationId?: string | null;
+  queuePosition?: number | null;
   prompt: string;
   qualityMode: string;
   inputPaths: string[];

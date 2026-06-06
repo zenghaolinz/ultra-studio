@@ -16,6 +16,7 @@ const TYPE_LABELS: Record<string, [string, string]> = {
 };
 
 const STATUS_META: Record<GenerationTaskStatus, { label: [string, string]; color: string; bg: string }> = {
+  queued: { label: ["排队中", "Queued"], color: "var(--accent-blue)", bg: "rgba(47,111,130,0.10)" },
   running: { label: ["运行中", "Running"], color: "var(--accent-warm)", bg: "rgba(179,107,44,0.12)" },
   success: { label: ["完成", "Complete"], color: "var(--success)", bg: "rgba(63,127,86,0.10)" },
   error: { label: ["失败", "Failed"], color: "var(--danger)", bg: "rgba(184,59,59,0.10)" },

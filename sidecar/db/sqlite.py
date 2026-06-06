@@ -64,7 +64,9 @@ CREATE_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS generation_tasks (
     id TEXT PRIMARY KEY,
     task_type TEXT NOT NULL,
-    status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error', 'cancelled')),
+    status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'success', 'error', 'cancelled')),
+    conversation_id TEXT DEFAULT NULL,
+    queue_position INTEGER DEFAULT NULL,
     prompt TEXT DEFAULT '',
     quality_mode TEXT DEFAULT '',
     input_paths TEXT DEFAULT '[]',
@@ -74,12 +76,25 @@ CREATE_STATEMENTS = [
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP DEFAULT NULL
 )""",
+    """CREATE TABLE IF NOT EXISTS message_tool_events (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    detail TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    position INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (message_id) REFERENCES stm_entries(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+)""",
     "CREATE INDEX IF NOT EXISTS idx_stm_conv ON stm_entries(conversation_id, created_at)",
 ]
 
 POST_MIGRATION_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_generation_tasks_updated ON generation_tasks(updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_generation_tasks_status ON generation_tasks(status, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_message_tool_events_message ON message_tool_events(message_id, position)",
 ]
 
 MIGRATIONS = [
@@ -107,6 +122,11 @@ MIGRATIONS_VISIBLE = [
 
 MIGRATIONS_PROJECTS = [
     "ALTER TABLE conversations ADD COLUMN project_id TEXT DEFAULT NULL",
+]
+
+MIGRATIONS_GENERATION_TASKS = [
+    "ALTER TABLE generation_tasks ADD COLUMN conversation_id TEXT DEFAULT NULL",
+    "ALTER TABLE generation_tasks ADD COLUMN queue_position INTEGER DEFAULT NULL",
 ]
 
 
@@ -152,6 +172,15 @@ async def _migrate():
         await _run_statements(conn, MIGRATIONS_PROJECTS)
         await conn.commit()
         print("[db] project_id migration complete")
+
+    cursor = await conn.execute("PRAGMA table_info(generation_tasks)")
+    cols = [row[1] async for row in cursor]
+    for stmt in MIGRATIONS_GENERATION_TASKS:
+        column = stmt.split(" ADD COLUMN ", 1)[1].split(" ", 1)[0]
+        if column not in cols:
+            print(f"[db] Running migration: adding {column} to generation_tasks")
+            await conn.execute(stmt)
+            await conn.commit()
 
     await _run_statements(conn, POST_MIGRATION_STATEMENTS)
     await conn.commit()

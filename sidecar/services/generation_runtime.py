@@ -1,5 +1,6 @@
 import time
 import threading
+import subprocess
 from contextlib import contextmanager
 
 from tools.comfyui_manager import (
@@ -49,6 +50,8 @@ _queue_lock = threading.Lock()
 _waiting_count = 0
 _active_count = 0
 
+MIN_FREE_VRAM_MB = 2048
+
 
 def is_generation_tool(name: str | None) -> bool:
     return name in GENERATION_TOOL_NAMES
@@ -58,9 +61,63 @@ def is_generation_action(name: str | None) -> bool:
     return name in GENERATION_ACTIONS
 
 
-def generation_queue_state() -> dict:
+def gpu_memory_state() -> dict:
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.free,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return {"available": False, "free_mb": None, "total_mb": None, "low_memory": False}
+    if result.returncode != 0 or not result.stdout.strip():
+        return {"available": False, "free_mb": None, "total_mb": None, "low_memory": False}
+    free_values: list[int] = []
+    total_values: list[int] = []
+    for line in result.stdout.strip().splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            free_values.append(int(parts[0]))
+            total_values.append(int(parts[1]))
+        except ValueError:
+            continue
+    if not free_values:
+        return {"available": False, "free_mb": None, "total_mb": None, "low_memory": False}
+    free_mb = max(free_values)
+    total_mb = max(total_values) if total_values else None
+    return {
+        "available": True,
+        "free_mb": free_mb,
+        "total_mb": total_mb,
+        "low_memory": free_mb < MIN_FREE_VRAM_MB,
+        "min_free_mb": MIN_FREE_VRAM_MB,
+    }
+
+
+def generation_queue_state(include_gpu: bool = True) -> dict:
     with _queue_lock:
-        return {"active": _active_count, "waiting": _waiting_count, "busy": _active_count > 0 or _waiting_count > 0}
+        state = {
+            "active": _active_count,
+            "waiting": _waiting_count,
+            "busy": _active_count > 0 or _waiting_count > 0,
+        }
+    if include_gpu:
+        state["gpu"] = gpu_memory_state()
+    return state
+
+
+def should_queue_generation() -> bool:
+    state = generation_queue_state()
+    gpu = state.get("gpu") or {}
+    return bool(state.get("busy") or gpu.get("low_memory"))
 
 
 @contextmanager

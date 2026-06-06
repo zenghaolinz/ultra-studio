@@ -38,6 +38,15 @@ class ProjectRouteTests(unittest.IsolatedAsyncioTestCase):
                 content TEXT NOT NULL,
                 created_at TEXT
             );
+            CREATE TABLE message_tool_events (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                label TEXT NOT NULL,
+                detail TEXT DEFAULT '',
+                created_at TEXT,
+                position INTEGER NOT NULL DEFAULT 0
+            );
             """
         )
         self.get_db_patch = patch.object(conversation_routes, "get_db", AsyncMock(return_value=self.db))
@@ -72,6 +81,24 @@ class ProjectRouteTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(ctx.exception.status_code, 404)
+
+    async def test_get_messages_returns_persisted_tool_events(self) -> None:
+        await self.db.execute("INSERT INTO conversations VALUES ('conversation-1', 'Chat', NULL, '', '')")
+        await self.db.execute(
+            "INSERT INTO stm_entries VALUES ('message-1', 'conversation-1', 'assistant', 'done', '2026-01-01T00:00:00')"
+        )
+        await self.db.execute(
+            """
+            INSERT INTO message_tool_events
+            VALUES ('event-1', 'message-1', 'conversation-1', '正在调用工具：generate_image', 'generate_image', '2026-01-01T00:00:01', 0)
+            """
+        )
+        await self.db.commit()
+
+        messages = await conversation_routes.get_messages("conversation-1")
+
+        self.assertEqual(messages[0]["toolEvents"][0]["label"], "正在调用工具：generate_image")
+        self.assertEqual(messages[0]["toolEvents"][0]["detail"], "generate_image")
 
 
 class GenerationCancellationTests(unittest.IsolatedAsyncioTestCase):

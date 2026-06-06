@@ -95,6 +95,20 @@ class GenerationRuntimeTests(unittest.TestCase):
 
         self.assertEqual(order, ["first-start", "first-end", "second"])
 
+    def test_low_gpu_memory_queues_generation(self) -> None:
+        with patch.object(
+            generation_runtime,
+            "gpu_memory_state",
+            return_value={
+                "available": True,
+                "free_mb": 512,
+                "total_mb": 8192,
+                "low_memory": True,
+                "min_free_mb": generation_runtime.MIN_FREE_VRAM_MB,
+            },
+        ):
+            self.assertTrue(generation_runtime.should_queue_generation())
+
 
 if __name__ == "__main__":
     unittest.main()
