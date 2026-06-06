@@ -12,6 +12,7 @@ const TYPE_LABELS: Record<string, [string, string]> = {
   multiview_to_3d: ["多视角 Hy3D", "Multiview Hy3D"],
   improve_image: ["图片改进", "Image improvement"],
   generate_image: ["概念图生成", "Concept image"],
+  generate_video: ["视频生成", "Video generation"],
   showcase_materials: ["展示材料", "Showcase materials"],
 };
 
@@ -33,6 +34,7 @@ function firstOutput(task: GenerationTask) {
   return (
     task.outputPaths.modelPath ||
     task.outputPaths.imagePath ||
+    task.outputPaths.videoPath ||
     task.outputPaths.image2D ||
     task.outputPaths.path ||
     ""

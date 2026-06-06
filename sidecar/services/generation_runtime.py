@@ -25,6 +25,7 @@ GENERATION_TOOL_NAMES = {
     "generate_3d_from_image",
     "generate_3d_from_generated_multiview",
     "modify_previous_3d",
+    "generate_video",
 }
 
 GENERATION_ACTIONS = {
@@ -39,6 +40,7 @@ GENERATION_ACTIONS = {
     "project_document_3d",
     "attachment_document_image",
     "attachment_document_3d",
+    "generate_video",
 }
 
 COMFY_STARTING_STATUS = "ComfyUI 启动中/连接中"

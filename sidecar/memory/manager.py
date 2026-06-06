@@ -1,6 +1,7 @@
 import json
 import base64
 import os
+import threading
 
 from db.sqlite import get_db
 from memory import stm
@@ -79,7 +80,7 @@ def infer_tool_scope(user_input: str, image_paths: list[str] | None = None) -> s
         return "file"
     if any(word in text for word in web_words):
         return "web"
-    if any(word in text for word in ["3d", "三维", "建模", "转3d", "转 3d", "生成模型", "生成图片", "生图", "出图", "三视图", "三视角"]):
+    if any(word in text for word in ["3d", "三维", "建模", "转3d", "转 3d", "生成模型", "生成图片", "生图", "出图", "视频", "短片", "动画", "图生视频", "文生视频", "三视图", "三视角"]):
         return "3d"
     if any(word in text for word in ["pdf", "docx", "word", "文档", "文件", "文件夹", "目录", "修改文件", "搜索文件", "读取多个"]):
         return "file"
@@ -142,6 +143,7 @@ async def build_context(
             "\n## 3D 生成能力",
             "你拥有图片生成和 3D 模型生成能力，通过 ComfyUI FLUX+Hunyuan3D 管线：",
             "1. 当用户要求生成图片，或一个多步骤任务需要先创建源图片时，调用 generate_image。",
+            "1a. 当用户要求生成视频、短片、动画、图生视频或文生视频时，调用 generate_video。视频生成会创建后台任务并立即返回 task_id，不要声称视频已经完成。",
             "2. 当用户直接描述一个物体、场景、角色或设计想法并要求得到 3D 模型时，调用 generate_3d_from_text。",
             "3. 当用户上传图片并要求生成 3D 模型时，调用 generate_3d_from_image。",
             "4. 当用户提供多张图片想要融合时，调用 generate_3d_fusion。",
@@ -452,6 +454,90 @@ def handle_generate_image(prompt: str, quality_mode: str = "fast") -> dict:
             from tools.comfy_client import tool_generate_image
             import json
             return json.loads(tool_generate_image(prompt, quality_mode))
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def _run_video_generation_task(
+    task_id: str,
+    image_path: str | None,
+    prompt: str,
+    quality_mode: str,
+    duration_seconds: int,
+    width: int,
+    height: int,
+) -> None:
+    from services.generation_runtime import ensure_comfyui_ready, generation_slot
+    from services.generation_tasks import update_generation_task_sync
+
+    try:
+        with generation_slot() as slot:
+            update_generation_task_sync(
+                task_id,
+                "running",
+                {},
+                "",
+                int(slot.get("queue_position", 0)),
+            )
+            runtime = ensure_comfyui_ready()
+            if not runtime.get("ok"):
+                update_generation_task_sync(task_id, "error", {}, runtime.get("message", "ComfyUI is not ready"))
+                return
+            from tools.comfy_client import generate_video_with_wan
+
+            video_path = generate_video_with_wan(
+                image_path,
+                prompt,
+                quality_mode,
+                duration_seconds=max(1, min(int(duration_seconds or 4), 5)),
+                width=max(256, min(int(width or 1024), 1280)),
+                height=max(256, min(int(height or 576), 1280)),
+            )
+            update_generation_task_sync(task_id, "success", {"videoPath": video_path}, "")
+    except Exception as e:
+        update_generation_task_sync(task_id, "error", {}, str(e))
+
+
+def handle_generate_video(
+    prompt: str,
+    image_path: str | None = None,
+    quality_mode: str = "quality",
+    duration_seconds: int = 4,
+    width: int = 1024,
+    height: int = 576,
+    conversation_id: str | None = None,
+) -> dict:
+    try:
+        if not prompt.strip():
+            return {"status": "error", "message": "Prompt cannot be empty"}
+        if image_path and not os.path.exists(image_path):
+            return {"status": "error", "message": f"Source image file not found: {image_path}"}
+        from services.generation_runtime import generation_queue_state
+        from services.generation_tasks import create_generation_task_sync, task_result
+
+        queue_state = generation_queue_state()
+        task_id = create_generation_task_sync(
+            "generate_video",
+            prompt,
+            quality_mode,
+            [image_path] if image_path else [],
+            status="queued",
+            conversation_id=conversation_id,
+            queue_position=int(queue_state.get("active", 0) + queue_state.get("waiting", 0)),
+        )
+        worker = threading.Thread(
+            target=_run_video_generation_task,
+            args=(task_id, image_path, prompt, quality_mode, duration_seconds, width, height),
+            daemon=True,
+        )
+        worker.start()
+        return {
+            **task_result(task_id, "Video generation queued. You can continue sending new tasks."),
+            "taskType": "generate_video",
+            "queue": queue_state,
+        }
+    except RuntimeError as e:
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

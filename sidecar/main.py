@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from db.sqlite import init_db, close_db
-from routes import chat, memory, config, persona, asset_3d, conversations, comfyui
+from routes import chat, memory, config, persona, asset_3d, conversations, comfyui, mcp
 
 
 @asynccontextmanager
@@ -51,6 +51,7 @@ app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(persona.router, prefix="/api/config", tags=["persona"])
 app.include_router(asset_3d.router)
 app.include_router(comfyui.router, prefix="/api/comfyui", tags=["comfyui"])
+app.include_router(mcp.router, prefix="/api/mcp", tags=["mcp"])
 
 
 @app.post("/api/app/shutdown")

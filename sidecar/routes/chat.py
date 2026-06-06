@@ -763,6 +763,26 @@ def _format_image_response(tool_name: str, result: dict) -> str:
     return f"图片任务失败。\n\n原因: {message}"
 
 
+def _format_video_response(result: dict) -> str:
+    status = result.get("status")
+    task_id = result.get("task_id") or result.get("taskId")
+    video_path = result.get("videoPath") or result.get("video_path")
+    if status == "queued" and task_id:
+        return "\n".join(
+            [
+                "视频生成任务已加入队列。",
+                "",
+                f"任务 ID: `{task_id}`",
+                "",
+                "你可以继续发送新的聊天或生成任务；视频完成后会出现在生成历史里。",
+            ]
+        )
+    if status == "success" and video_path:
+        return "\n".join(["视频生成已完成。", "", f"视频: `{video_path}`"])
+    message = result.get("message") or "视频生成任务没有返回结果"
+    return f"视频任务失败。\n\n原因: {message}"
+
+
 async def _inject_image_context(conversation_id: str, result: dict):
     if result.get("status") != "success":
         return
@@ -2161,6 +2181,7 @@ ROUTER_ACTIONS = {
     "chat",
     "general_tools",
     "generate_image",
+    "generate_video",
     "edit_image",
     "generate_3d_text",
     "generate_3d_image",
@@ -2327,10 +2348,10 @@ async def _llm_route_request(client, model_name: str, req: ChatRequest, provider
     system_hint = (
         "你是 Ultra Studio 的工具路由器。只输出 JSON，不要 Markdown。"
         "根据用户请求和上下文选择一个 action。"
-        "可选 action: chat, general_tools, generate_image, edit_image, generate_3d_text, "
+        "可选 action: chat, general_tools, generate_image, generate_video, edit_image, generate_3d_text, "
         "generate_3d_image, generate_3d_fusion, generate_multiview_images, generate_3d_multiview, project_document_image, project_document_3d, "
         "attachment_document_image, attachment_document_3d, read_document, create_docx, edit_docx, folder_summary_docx, create_text_file, choose_implementation。"
-        "规则：如果用户要生成/画一张新图片，选 generate_image；如果用户上传图片、引用 latest_active_image，或要求修改项目/文件夹里的图片，并要求补全、画完整、扩图、改颜色、润色、修改，选 edit_image；"
+        "规则：如果用户要生成/画一张新图片，选 generate_image；如果用户要生成视频、短片、动画、图生视频或文生视频，选 generate_video；如果用户上传图片、引用 latest_active_image，或要求修改项目/文件夹里的图片，并要求补全、画完整、扩图、改颜色、润色、修改，选 edit_image；"
         "如果用户要求创建本地代码、脚本、网页、HTML、Markdown、TXT、JSON、CSS/JS/Python 文件、可运行 Demo、小游戏或工具，选 create_text_file；"
         "如果用户是在已有/刚生成的代码、HTML、网页、小游戏或文本文件上要求加入、添加、修改、修复、优化、美化某个功能，选 general_tools，不要选 create_text_file，也不要删除旧文件。"
         "create_text_file 支持一次请求创建多个文件，适合需要 index.html/style.css/app.js、多个脚本或项目骨架的任务。"
@@ -2424,6 +2445,23 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
         result["source_prompt"] = prompt
         result["quality_mode"] = quality_mode
         return {"tool": "generate_image", "result": result}
+
+    if action == "generate_video":
+        image_paths = [os.path.normpath(path) for path in _image_attachments(req.image_paths)]
+        source = image_paths[0] if image_paths else await _find_latest_edit_source_image(req.conversation_id)
+        result = await asyncio.to_thread(
+            memory_mgr.handle_generate_video,
+            prompt,
+            source,
+            quality_mode if quality_mode in {"fast", "quality"} else "quality",
+            4,
+            1024,
+            576,
+            req.conversation_id,
+        )
+        result["source_prompt"] = prompt
+        result["source_image"] = source
+        return {"tool": "generate_video", "result": result}
 
     if action == "edit_image":
         source = None
@@ -2538,6 +2576,8 @@ def _format_router_result(routed_result: dict | str | None) -> str | None:
         result = routed_result.get("result") or {}
         if tool in {"generate_image", "edit_image", "generate_multiview_images_from_image"}:
             return _format_image_response(tool, result)
+        if tool == "generate_video":
+            return _format_video_response(result)
         if tool in THREE_D_TOOL_NAMES:
             return _format_3d_response(tool, result)
         if tool == "implementation_choice":
@@ -2757,6 +2797,28 @@ async def _run_tool_calls(
                         await _inject_image_context(conversation_id, result)
                     except Exception:
                         pass
+            elif tool_call.function.name == "generate_video":
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                    result = memory_mgr.handle_generate_video(
+                        args.get("prompt", ""),
+                        args.get("image_path") or None,
+                        args.get("quality_mode", "quality"),
+                        int(args.get("duration_seconds", 4)),
+                        int(args.get("width", 1024)),
+                        int(args.get("height", 576)),
+                        conversation_id,
+                    )
+                except Exception as e:
+                    result = {"status": "error", "message": str(e)}
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+                tool_results.append({"tool": tool_call.function.name, "result": result})
             elif tool_call.function.name == "generate_3d_from_text":
                 try:
                     args = json.loads(tool_call.function.arguments)
@@ -3858,6 +3920,7 @@ async def send_message(req: ChatRequest):
     three_d_result = _first_3d_result(tool_results)
     multiview_image_result = _first_tool_result(tool_results, "generate_multiview_images_from_image")
     generated_image_result = _first_tool_result(tool_results, "generate_image")
+    generated_video_result = _first_tool_result(tool_results, "generate_video")
     modified_image_result = _first_tool_result(tool_results, "modify_image_with_flux")
     delete_result = _first_tool_result(tool_results, "delete_file")
     command_result = _first_tool_result(tool_results, "run_command")
@@ -3930,6 +3993,18 @@ async def send_message(req: ChatRequest):
             generated_image_result["tool"],
             generated_image_result["result"],
             "LLM tool call produced image result",
+            "tool_call",
+            _image_attachments(req.image_paths),
+        )
+    elif generated_video_result:
+        assistant_content = _format_video_response(generated_video_result["result"])
+        assistant_content += await _direct_agent_trace_block(
+            req,
+            provider_config,
+            "generate_video",
+            generated_video_result["tool"],
+            generated_video_result["result"],
+            "LLM tool call queued video generation",
             "tool_call",
             _image_attachments(req.image_paths),
         )
@@ -4299,6 +4374,8 @@ async def send_message_stream(req: ChatRequest):
                     yield f"data: {json.dumps({'status': COMFY_STARTING_STATUS}, ensure_ascii=False)}\n\n"
                 if action == "generate_image":
                     yield f"data: {json.dumps({'status': '正在生成图片'}, ensure_ascii=False)}\n\n"
+                elif action == "generate_video":
+                    yield f"data: {json.dumps({'status': '视频任务入队中'}, ensure_ascii=False)}\n\n"
                 elif action == "edit_image":
                     yield f"data: {json.dumps({'status': '正在编辑图片'}, ensure_ascii=False)}\n\n"
                 elif action == "generate_multiview_images":
@@ -4940,6 +5017,7 @@ async def send_message_stream(req: ChatRequest):
                 three_d_result = _first_3d_result(tool_results)
                 multiview_image_result = _first_tool_result(tool_results, "generate_multiview_images_from_image")
                 generated_image_result = _first_tool_result(tool_results, "generate_image")
+                generated_video_result = _first_tool_result(tool_results, "generate_video")
                 modified_image_result = _first_tool_result(tool_results, "modify_image_with_flux")
                 delete_result = _first_tool_result(tool_results, "delete_file")
                 command_result = _first_tool_result(tool_results, "run_command")
@@ -4986,6 +5064,8 @@ async def send_message_stream(req: ChatRequest):
                     result_text = _format_image_response(
                         generated_image_result["tool"], generated_image_result["result"]
                     )
+                elif generated_video_result:
+                    result_text = _format_video_response(generated_video_result["result"])
                 elif delete_result:
                     continuation = _extract_delete_continuation(req.content)
                     if delete_result["result"].get("needs_confirmation") and continuation:
@@ -5041,6 +5121,17 @@ async def send_message_stream(req: ChatRequest):
                             generated_image_result["tool"],
                             generated_image_result["result"],
                             "LLM tool call produced image result",
+                            "tool_call",
+                            _image_attachments(req.image_paths),
+                        )
+                    elif generated_video_result:
+                        full_content += await _direct_agent_trace_block(
+                            req,
+                            provider_config,
+                            "generate_video",
+                            generated_video_result["tool"],
+                            generated_video_result["result"],
+                            "LLM tool call queued video generation",
                             "tool_call",
                             _image_attachments(req.image_paths),
                         )

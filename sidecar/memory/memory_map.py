@@ -162,6 +162,44 @@ def build_3d_tools_definition() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "generate_video",
+                "description": "根据文字提示，或可选的源图片，创建一个后台视频生成任务。该工具只把任务加入生成队列并返回 task_id，不会等待视频完成；用户可以继续发送新的聊天或生成任务。适用于文生视频、图生视频、产品短片、动态展示、镜头运动预览等请求。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "视频内容、主体、动作、镜头和风格描述。",
+                        },
+                        "image_path": {
+                            "type": "string",
+                            "description": "可选源图片绝对路径；提供时执行图生视频。",
+                        },
+                        "quality_mode": {
+                            "type": "string",
+                            "enum": ["fast", "quality"],
+                            "description": "生成质量。fast 更快，quality 更精细。默认 quality。",
+                        },
+                        "duration_seconds": {
+                            "type": "integer",
+                            "description": "视频时长，当前限制为 1 到 5 秒。默认 4。",
+                        },
+                        "width": {
+                            "type": "integer",
+                            "description": "输出宽度，默认 1024。",
+                        },
+                        "height": {
+                            "type": "integer",
+                            "description": "输出高度，默认 576。",
+                        },
+                    },
+                    "required": ["prompt"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "generate_3d_from_text",
                 "description": "根据文字描述生成3D模型。当用户描述一个物体、角色、场景或设计想法时使用。自动将简短描述扩展为适合FLUX模型的专业英文Prompt，然后从生成的高质量图片构建3D网格。支持fast(快速预览,约30s)和quality(高精度,约90s)两种模式。",
                 "parameters": {

@@ -129,6 +129,30 @@ MIGRATIONS_GENERATION_TASKS = [
     "ALTER TABLE generation_tasks ADD COLUMN queue_position INTEGER DEFAULT NULL",
 ]
 
+MIGRATIONS_GENERATION_TASK_STATUS_CHECK = [
+    "ALTER TABLE generation_tasks RENAME TO generation_tasks_old",
+    """CREATE TABLE generation_tasks (
+    id TEXT PRIMARY KEY,
+    task_type TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'success', 'error', 'cancelled')),
+    conversation_id TEXT DEFAULT NULL,
+    queue_position INTEGER DEFAULT NULL,
+    prompt TEXT DEFAULT '',
+    quality_mode TEXT DEFAULT '',
+    input_paths TEXT DEFAULT '[]',
+    output_paths TEXT DEFAULT '{}',
+    error TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP DEFAULT NULL
+)""",
+    """INSERT INTO generation_tasks
+    (id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error, created_at, updated_at, completed_at)
+    SELECT id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error, created_at, updated_at, completed_at
+    FROM generation_tasks_old""",
+    "DROP TABLE generation_tasks_old",
+]
+
 
 async def _run_statements(conn: aiosqlite.Connection, statements: list[str]):
     for stmt in statements:
@@ -181,6 +205,15 @@ async def _migrate():
             print(f"[db] Running migration: adding {column} to generation_tasks")
             await conn.execute(stmt)
             await conn.commit()
+    cursor = await conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generation_tasks'"
+    )
+    row = await cursor.fetchone()
+    table_sql = row[0] if row else ""
+    if "queued" not in table_sql:
+        print("[db] Running migration: widening generation_tasks status check")
+        await _run_statements(conn, MIGRATIONS_GENERATION_TASK_STATUS_CHECK)
+        await conn.commit()
 
     await _run_statements(conn, POST_MIGRATION_STATEMENTS)
     await conn.commit()
