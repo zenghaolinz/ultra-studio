@@ -957,9 +957,19 @@ function ToolActivityTimeline({ events, active }: { events?: ToolActivityEvent[]
   const latest = events[events.length - 1];
   const latestActivity = activityFromStatus(latest.label, language);
   return (
-    <details className="tool-activity-timeline" open={active}>
+    <details className={`tool-activity-timeline ${active ? "active" : "complete"}`} open={active}>
       <summary>
-        <ActivityIndicator status={latest.label} />
+        {active ? (
+          <ActivityIndicator status={latest.label} />
+        ) : (
+          <div className="tool-activity-summary-static" aria-label={latestActivity.label}>
+            <span className="tool-activity-static-mark" aria-hidden="true" />
+            <span className="tool-activity-static-text">
+              {text("工具调用已完成", "Tool calls complete")}
+            </span>
+            <span className="tool-activity-row-detail">{latestActivity.detail}</span>
+          </div>
+        )}
         <span>{text(`${events.length} 条记录`, `${events.length} events`)}</span>
       </summary>
       <div className="tool-activity-list">

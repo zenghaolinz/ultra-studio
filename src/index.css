@@ -1557,6 +1557,44 @@ select:focus-visible {
   min-width: 0;
 }
 
+.tool-activity-summary-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.tool-activity-static-mark {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(47, 111, 130, 0.22);
+  position: relative;
+  flex-shrink: 0;
+  background: rgba(47, 111, 130, 0.06);
+}
+
+.tool-activity-static-mark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: var(--accent);
+}
+
+.tool-activity-static-text {
+  font-size: 14px;
+  font-weight: 720;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
 .tool-activity-list {
   border-top: 1px solid rgba(47, 111, 130, 0.1);
   padding: 6px;
