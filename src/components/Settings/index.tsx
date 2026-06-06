@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { ComfyUiProfile, ComfyUiProfilesResponse, ComfyUiStatus, EmbeddingConfig, LocalProvider, ModelConfig, Persona, ProviderType } from "../../types";
+import type { ComfyUiLaunchMode, ComfyUiProfile, ComfyUiProfilesResponse, ComfyUiStatus, EmbeddingConfig, LocalProvider, ModelConfig, Persona, ProviderType } from "../../types";
 import { PROVIDER_PRESETS } from "../../types";
 import Icon from "../Icon";
 import { useAppStore } from "../../stores/appStore";
@@ -49,6 +49,7 @@ export default function Settings({ onClose }: Props) {
   const [comfyStatus, setComfyStatus] = useState<ComfyUiStatus | null>(null);
   const [comfyName, setComfyName] = useState("Default");
   const [comfyPath, setComfyPath] = useState("");
+  const [comfyLaunchMode, setComfyLaunchMode] = useState<ComfyUiLaunchMode>("portable");
   const [comfyBusy, setComfyBusy] = useState(false);
 
   const showToast = (msg: string) => {
@@ -84,6 +85,7 @@ export default function Settings({ onClose }: Props) {
       if (selected) {
         setComfyName(selected.name);
         setComfyPath(selected.path);
+        setComfyLaunchMode(selected.launch_mode || "portable");
       }
     } catch (e: any) {
       showToast(text("加载 ComfyUI 配置失败：", "Failed to load ComfyUI configuration: ") + (e?.message || String(e)));
@@ -123,7 +125,7 @@ export default function Settings({ onClose }: Props) {
     setComfyBusy(true);
     try {
       const result = await invoke<ComfyUiProfilesResponse>("save_comfyui_profile", {
-        profile: { name: comfyName.trim() || "ComfyUI", path: comfyPath.trim(), select: true },
+        profile: { name: comfyName.trim() || "ComfyUI", path: comfyPath.trim(), select: true, launchMode: comfyLaunchMode },
       });
       setComfyProfiles(result.profiles);
       setComfyStatus(result.status);
@@ -145,6 +147,7 @@ export default function Settings({ onClose }: Props) {
       if (selected) {
         setComfyName(selected.name);
         setComfyPath(selected.path);
+        setComfyLaunchMode(selected.launch_mode || "portable");
       }
       showToast(text("已切换 ComfyUI 版本", "ComfyUI version selected"));
     } catch (e: any) {
@@ -159,7 +162,13 @@ export default function Settings({ onClose }: Props) {
     try {
       const next = await invoke<ComfyUiStatus>("start_comfyui");
       setComfyStatus(next);
-      showToast(next.error ? text("启动失败", "Start failed") : text("ComfyUI 正在启动", "ComfyUI is starting"));
+      showToast(
+        next.error
+          ? text("启动失败", "Start failed")
+          : next.started === false
+            ? text("未检测到 ComfyUI，请先手动启动 Desktop/外部服务", "ComfyUI was not detected; start the Desktop/external service first")
+            : text("ComfyUI 正在启动或已连接", "ComfyUI is starting or connected")
+      );
     } catch (e: any) {
       showToast(text("启动失败：", "Start failed: ") + (e?.message || String(e)));
     } finally {
@@ -433,10 +442,12 @@ export default function Settings({ onClose }: Props) {
           status={comfyStatus}
           name={comfyName}
           path={comfyPath}
+          launchMode={comfyLaunchMode}
           busy={comfyBusy}
           inputStyle={inputStyle}
           onNameChange={setComfyName}
           onPathChange={setComfyPath}
+          onLaunchModeChange={setComfyLaunchMode}
           onBrowse={chooseComfyPath}
           onSave={saveComfyProfile}
           onSelect={selectComfyProfile}
@@ -457,10 +468,12 @@ function ComfyUiSettings({
   status,
   name,
   path,
+  launchMode,
   busy,
   inputStyle,
   onNameChange,
   onPathChange,
+  onLaunchModeChange,
   onBrowse,
   onSave,
   onSelect,
@@ -472,10 +485,12 @@ function ComfyUiSettings({
   status: ComfyUiStatus | null;
   name: string;
   path: string;
+  launchMode: ComfyUiLaunchMode;
   busy: boolean;
   inputStyle: React.CSSProperties;
   onNameChange: (v: string) => void;
   onPathChange: (v: string) => void;
+  onLaunchModeChange: (v: ComfyUiLaunchMode) => void;
   onBrowse: () => void;
   onSave: () => void;
   onSelect: (id: string) => void;
@@ -485,6 +500,8 @@ function ComfyUiSettings({
 }) {
   const { text } = useLanguage();
   const selected = profiles.find((p) => p.selected);
+  const selectedLaunchMode = selected?.launch_mode || launchMode;
+  const selectedIsExternal = selectedLaunchMode === "external";
   const stateLabel = status?.ready
     ? text("已就绪", "Ready")
     : status?.running || status?.process_alive
@@ -514,15 +531,19 @@ function ComfyUiSettings({
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
           <StatusPill label={text("端口", "Port")} value={status?.running ? text("8188 已监听", "8188 listening") : text("未监听", "Not listening")} ok={!!status?.running} />
-          <StatusPill label={text("进程", "Process")} value={status?.process_alive ? text("程序管理", "Managed") : text("未跟踪", "Untracked")} ok={!!status?.process_alive || !!status?.ready} />
+          <StatusPill
+            label={text("模式", "Mode")}
+            value={selectedIsExternal ? text("Desktop/外部", "Desktop/external") : text("Portable", "Portable")}
+            ok={!selectedIsExternal || !!status?.running}
+          />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
           <button className="primary-button" onClick={onStart} disabled={busy || status?.ready || !selected} style={{ height: 36 }}>
             <Icon name="play" size={15} />
-            {text("启动", "Start")}
+            {selectedIsExternal ? text("检测", "Check") : text("启动", "Start")}
           </button>
-          <button className="tool-button" onClick={onStop} disabled={busy || (!status?.running && !status?.process_alive)} style={{ height: 36 }}>
+          <button className="tool-button" onClick={onStop} disabled={busy || selectedIsExternal || !status?.process_alive} style={{ height: 36 }}>
             <Icon name="stop" size={14} />
             {text("停止", "Stop")}
           </button>
@@ -553,7 +574,10 @@ function ComfyUiSettings({
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: profile.valid ? "var(--success)" : "var(--danger)", flexShrink: 0 }} />
               <span style={{ minWidth: 0, textAlign: "left" }}>
                 <span style={{ display: "block", fontSize: 12, fontWeight: 760 }}>{profile.name}</span>
-                <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.path}</span>
+                <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {(profile.launch_mode || "portable") === "external" ? text("Desktop/外部 · ", "Desktop/external · ") : text("Portable · ", "Portable · ")}
+                  {profile.path}
+                </span>
               </span>
             </button>
           ))
@@ -567,6 +591,14 @@ function ComfyUiSettings({
       <div className="surface" style={{ borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 780 }}>{text("添加或更新版本", "Add or update version")}</div>
         <input style={inputStyle} value={name} onChange={(e) => onNameChange(e.target.value)} placeholder={text("版本名称，例如 4B 快速版 / 9B 高质量版", "Version name, e.g. 4B Fast or 9B Quality")} />
+        <select
+          value={launchMode}
+          onChange={(e) => onLaunchModeChange(e.target.value as ComfyUiLaunchMode)}
+          style={inputStyle}
+        >
+          <option value="portable">{text("Portable：应用可启动该目录", "Portable: app can launch this folder")}</option>
+          <option value="external">{text("Desktop/外部：只检测手动启动的服务", "Desktop/external: only detect a manually started service")}</option>
+        </select>
         <div style={{ display: "flex", gap: 8 }}>
           <input style={{ ...inputStyle, flex: 1 }} value={path} onChange={(e) => onPathChange(e.target.value)} placeholder={text("ComfyUI Windows Portable 目录", "ComfyUI Windows Portable folder")} />
           <button className="tool-button" onClick={onBrowse} disabled={busy} style={{ height: 36, padding: "0 10px" }}>

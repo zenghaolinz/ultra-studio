@@ -18,6 +18,7 @@ class ComfyUiProfileSave(BaseModel):
     name: str
     path: str
     select: bool = True
+    launchMode: str | None = None
 
 
 class ComfyUiProfileSelect(BaseModel):
@@ -39,7 +40,7 @@ async def comfyui_profiles():
 
 @router.post("/profiles")
 async def save_profile(req: ComfyUiProfileSave):
-    profile = save_comfyui_profile(req.name, req.path, req.id, req.select)
+    profile = save_comfyui_profile(req.name, req.path, req.id, req.select, req.launchMode)
     return {"profile": profile, "profiles": list_comfyui_profiles(), "status": get_status()}
 
 

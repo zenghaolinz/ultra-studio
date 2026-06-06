@@ -466,10 +466,16 @@ pub struct LocalProvider {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ComfyUiStatus {
+    pub started: Option<bool>,
+    pub stopped: Option<bool>,
     pub running: Option<bool>,
     pub ready: Option<bool>,
     #[serde(rename = "configured_path")]
     pub configured_path: Option<String>,
+    #[serde(rename = "launch_mode")]
+    pub launch_mode: Option<String>,
+    #[serde(rename = "selected_profile_id")]
+    pub selected_profile_id: Option<String>,
     #[serde(rename = "process_alive")]
     pub process_alive: Option<bool>,
     #[serde(rename = "recent_logs")]
@@ -482,6 +488,8 @@ pub struct ComfyUiProfile {
     pub id: String,
     pub name: String,
     pub path: String,
+    #[serde(rename = "launch_mode")]
+    pub launch_mode: Option<String>,
     pub selected: Option<bool>,
     pub valid: Option<bool>,
 }
@@ -498,6 +506,8 @@ pub struct ComfyUiProfileSaveRequest {
     pub name: String,
     pub path: String,
     pub select: bool,
+    #[serde(rename = "launchMode")]
+    pub launch_mode: Option<String>,
 }
 
 #[tauri::command]

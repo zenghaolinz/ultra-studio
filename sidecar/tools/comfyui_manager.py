@@ -15,6 +15,9 @@ SIDECAR_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(SIDECAR_DIR, "config.ini")
 LOGS_DIR = os.path.join(SIDECAR_DIR, "logs")
 COMFYUI_PORT = 8188
+LAUNCH_MODE_PORTABLE = "portable"
+LAUNCH_MODE_EXTERNAL = "external"
+VALID_LAUNCH_MODES = {LAUNCH_MODE_PORTABLE, LAUNCH_MODE_EXTERNAL}
 
 _process: Optional[subprocess.Popen] = None
 _reader_thread: Optional[threading.Thread] = None
@@ -43,12 +46,12 @@ def _read_config():
 
 
 def get_comfyui_path() -> str:
+    profile = get_selected_comfyui_profile()
+    if profile:
+        return profile["path"]
     cfg = _read_config()
-    selected_id = cfg.get("ComfyUI", "selected", fallback="").strip()
-    if selected_id:
-        for profile in list_comfyui_profiles():
-            if profile["id"] == selected_id:
-                return profile["path"]
+    if not cfg.has_section("ComfyUI"):
+        return ""
     return cfg.get("ComfyUI", "path", fallback="").strip()
 
 
@@ -60,7 +63,7 @@ def set_comfyui_path(path: str, name: str = "Default"):
     cfg.set("ComfyUI", "selected", "default")
     profiles = _profiles_from_config(cfg)
     profiles = [p for p in profiles if p.get("id") != "default"]
-    profiles.insert(0, {"id": "default", "name": name or "Default", "path": path})
+    profiles.insert(0, {"id": "default", "name": name or "Default", "path": path, "launch_mode": LAUNCH_MODE_PORTABLE})
     cfg.set("ComfyUI", "profiles", json.dumps(profiles, ensure_ascii=False))
     if not cfg.has_option("ComfyUI", "port"):
         cfg.set("ComfyUI", "port", str(COMFYUI_PORT))
@@ -79,6 +82,9 @@ def _slugify_profile_id(name: str, fallback: str = "comfyui") -> str:
 
 
 def _profiles_from_config(cfg) -> list[dict]:
+    if not cfg.has_section("ComfyUI"):
+        return []
+
     raw = cfg.get("ComfyUI", "profiles", fallback="").strip()
     profiles: list[dict] = []
     if raw:
@@ -91,19 +97,31 @@ def _profiles_from_config(cfg) -> list[dict]:
                     profile_id = str(item.get("id") or "").strip()
                     name = str(item.get("name") or profile_id or "ComfyUI").strip()
                     path = str(item.get("path") or "").strip()
+                    launch_mode = _normalize_launch_mode(str(item.get("launch_mode") or item.get("launchMode") or ""))
                     if profile_id and path:
-                        profiles.append({"id": profile_id, "name": name, "path": path})
+                        profiles.append({"id": profile_id, "name": name, "path": path, "launch_mode": launch_mode})
         except Exception:
             pass
 
     legacy_path = cfg.get("ComfyUI", "path", fallback="").strip()
     if legacy_path and not any(p["path"] == legacy_path for p in profiles):
-        profiles.insert(0, {"id": "default", "name": "Default", "path": legacy_path})
+        profiles.insert(0, {"id": "default", "name": "Default", "path": legacy_path, "launch_mode": LAUNCH_MODE_PORTABLE})
     return profiles
+
+
+def _normalize_launch_mode(value: str | None) -> str:
+    mode = (value or "").strip().lower()
+    if mode in {"desktop", "manual", "externally_managed"}:
+        return LAUNCH_MODE_EXTERNAL
+    if mode in VALID_LAUNCH_MODES:
+        return mode
+    return LAUNCH_MODE_PORTABLE
 
 
 def list_comfyui_profiles() -> list[dict]:
     cfg = _read_config()
+    if not cfg.has_section("ComfyUI"):
+        return []
     selected_id = cfg.get("ComfyUI", "selected", fallback="").strip()
     profiles = _profiles_from_config(cfg)
     return [
@@ -116,7 +134,33 @@ def list_comfyui_profiles() -> list[dict]:
     ]
 
 
-def save_comfyui_profile(name: str, path: str, profile_id: str | None = None, select: bool = True) -> dict:
+def get_selected_comfyui_profile() -> dict | None:
+    cfg = _read_config()
+    if not cfg.has_section("ComfyUI"):
+        return None
+    selected_id = cfg.get("ComfyUI", "selected", fallback="").strip()
+    profiles = _profiles_from_config(cfg)
+    if selected_id:
+        for profile in profiles:
+            if profile["id"] == selected_id:
+                return profile
+    return profiles[0] if profiles else None
+
+
+def get_comfyui_launch_mode() -> str:
+    profile = get_selected_comfyui_profile()
+    if profile:
+        return _normalize_launch_mode(profile.get("launch_mode"))
+    return LAUNCH_MODE_PORTABLE
+
+
+def save_comfyui_profile(
+    name: str,
+    path: str,
+    profile_id: str | None = None,
+    select: bool = True,
+    launch_mode: str | None = None,
+) -> dict:
     cfg = _read_config()
     if "ComfyUI" not in cfg:
         cfg.add_section("ComfyUI")
@@ -129,7 +173,12 @@ def save_comfyui_profile(name: str, path: str, profile_id: str | None = None, se
     while profile_id in existing_ids:
         profile_id = f"{base_id}-{index}"
         index += 1
-    profile = {"id": profile_id, "name": clean_name, "path": path.strip()}
+    profile = {
+        "id": profile_id,
+        "name": clean_name,
+        "path": path.strip(),
+        "launch_mode": _normalize_launch_mode(launch_mode),
+    }
     profiles = [p for p in profiles if p["id"] != profile_id and p["path"] != profile["path"]]
     profiles.append(profile)
     cfg.set("ComfyUI", "profiles", json.dumps(profiles, ensure_ascii=False))
@@ -236,7 +285,7 @@ def get_comfyui_launch_info(path: str) -> Tuple[list[str] | str, str, str]:
 
 def auto_detect_comfyui_path() -> Optional[str]:
     cfg = _read_config()
-    saved = cfg.get("ComfyUI", "path", fallback="").strip()
+    saved = cfg.get("ComfyUI", "path", fallback="").strip() if cfg.has_section("ComfyUI") else ""
     if saved and is_valid_comfyui_path(saved):
         _log(f"Using saved ComfyUI path: {saved}")
         return saved
@@ -268,24 +317,21 @@ def start_comfyui() -> bool:
     if verify_comfyui_running():
         if _process is not None and _process.poll() is None:
             _log("Managed ComfyUI already running on port 8188")
-            _ready = True
-            return True
-        _log("Detected unmanaged ComfyUI on port 8188 from a previous run; restarting it to avoid stale node/session state")
-        stop_comfyui()
-        for _ in range(15):
-            if not verify_comfyui_running():
-                break
-            time.sleep(1)
-        if verify_comfyui_running():
-            _log("ERROR: Unable to stop stale ComfyUI on port 8188")
-            _ready = False
-            return False
+        else:
+            _log("Detected external ComfyUI on port 8188; using it without taking process ownership")
+        _ready = True
+        return True
 
     if _process is not None and _process.poll() is None:
         _log("ComfyUI process already running")
         return True
 
     _ready = False
+
+    launch_mode = get_comfyui_launch_mode()
+    if launch_mode == LAUNCH_MODE_EXTERNAL:
+        _log("External/Desktop ComfyUI profile selected. Start ComfyUI Desktop manually, then refresh status.")
+        return False
 
     path = get_comfyui_path()
     if not path:
@@ -372,6 +418,13 @@ def stop_comfyui():
 
     killed = False
 
+    if _process is None or _process.poll() is not None:
+        _process = None
+        _reader_thread = None
+        _ready = verify_comfyui_running()
+        _log("No managed ComfyUI process to stop; external/Desktop ComfyUI was left untouched")
+        return
+
     # Method 1: Use the tracked process
     if _process is not None and _process.poll() is None:
         _log(f"Stopping ComfyUI (PID: {_process.pid})...")
@@ -389,28 +442,7 @@ def stop_comfyui():
         except Exception as e:
             _log(f"Warning during managed stop: {e}")
 
-    # Method 2: Find by port 8188
-    if verify_comfyui_running():
-        _log("ComfyUI still running on port 8188, searching by port...")
-        pid = _find_pid_on_port(8188)
-        if pid:
-            _log(f"Found PID {pid} on port 8188, force killing...")
-            try:
-                if sys.platform == "win32":
-                    subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)],
-                        capture_output=True, timeout=10,
-                    )
-                else:
-                    subprocess.run(["kill", "-9", str(pid)], timeout=10)
-                killed = True
-                _log(f"ComfyUI killed via port (PID: {pid})")
-            except Exception as e:
-                _log(f"Error killing PID {pid}: {e}")
-        else:
-            _log("Could not determine PID on port 8188")
-
-    # Method 3: Clear VRAM via ComfyUI API (if still responding)
+    # Clear VRAM via ComfyUI API if the managed process is still responding.
     try:
         import urllib.request
         urllib.request.urlopen("http://127.0.0.1:8188/memory/free", timeout=5)
@@ -426,11 +458,11 @@ def stop_comfyui():
         time.sleep(1)
 
     if verify_comfyui_running():
-        _log("WARNING: Port 8188 still active after stop attempts")
+        _log("Port 8188 is still active after stopping managed process; treating it as external ComfyUI")
 
     _process = None
     _reader_thread = None
-    _ready = False
+    _ready = verify_comfyui_running()
     _log(f"ComfyUI stop complete (killed={killed})")
 
 
@@ -463,10 +495,14 @@ def _find_pid_on_port(port: int) -> int | None:
 
 
 def get_status() -> dict:
+    running = verify_comfyui_running()
+    profile = get_selected_comfyui_profile()
     return {
-        "running": verify_comfyui_running(),
-        "ready": _ready or verify_comfyui_running(),
-        "configured_path": get_comfyui_path(),
+        "running": running,
+        "ready": _ready or running,
+        "configured_path": profile["path"] if profile else get_comfyui_path(),
+        "launch_mode": profile.get("launch_mode", LAUNCH_MODE_PORTABLE) if profile else LAUNCH_MODE_PORTABLE,
+        "selected_profile_id": profile.get("id") if profile else None,
         "process_alive": _process is not None and _process.poll() is None if _process else False,
         "recent_logs": _log_lines[-20:],
     }

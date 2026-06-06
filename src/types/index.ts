@@ -186,18 +186,25 @@ export interface ThreeDProgress {
 }
 
 export interface ComfyUiStatus {
+  started?: boolean;
+  stopped?: boolean;
   running?: boolean;
   ready?: boolean;
   configured_path?: string;
+  launch_mode?: ComfyUiLaunchMode;
+  selected_profile_id?: string | null;
   process_alive?: boolean;
   recent_logs?: string[];
   error?: string;
 }
 
+export type ComfyUiLaunchMode = "portable" | "external";
+
 export interface ComfyUiProfile {
   id: string;
   name: string;
   path: string;
+  launch_mode?: ComfyUiLaunchMode;
   selected?: boolean;
   valid?: boolean;
 }
