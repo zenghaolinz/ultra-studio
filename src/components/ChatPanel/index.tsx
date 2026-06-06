@@ -1,9 +1,9 @@
-﻿import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/appStore";
-import type { ToolActivityEvent } from "../../types";
+import type { GenerationTask, Message, ToolActivityEvent } from "../../types";
 import ModelPreview from "../ThreeDStudio/ModelPreview";
 import Icon from "../Icon";
 import { useLanguage } from "../../i18n";
@@ -562,6 +562,156 @@ function collectAssets(messages: { id: string; role: string; content: string; im
     }
   }
   return items.slice(-8).reverse();
+}
+
+function taskIdsFromContent(content: string) {
+  const ids = new Set<string>();
+  const patterns = [
+    /\u4efb\u52a1\s*ID\s*[:\uff1a]\s*`?([a-f0-9]{20,})`?/gi,
+    /Task\s*ID\s*[:\uff1a]\s*`?([a-f0-9]{20,})`?/gi,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content))) {
+      ids.add(match[1]);
+    }
+  }
+  return Array.from(ids);
+}
+
+function collectTaskIds(messages: { role: string; content: string }[]) {
+  const ids = new Set<string>();
+  for (const msg of messages) {
+    if (msg.role !== "assistant") continue;
+    for (const id of taskIdsFromContent(msg.content)) ids.add(id);
+  }
+  return Array.from(ids);
+}
+
+function taskOutputPath(task: GenerationTask) {
+  return (
+    task.outputPaths.modelPath ||
+    task.outputPaths.imagePath ||
+    task.outputPaths.videoPath ||
+    task.outputPaths.image2D ||
+    task.outputPaths.path ||
+    ""
+  );
+}
+
+function ChatGenerationTasks({ messages, onToast }: { messages: Message[]; onToast: (text: string) => void }) {
+  const { text } = useLanguage();
+  const taskIds = useMemo(() => collectTaskIds(messages), [messages]);
+  const [tasks, setTasks] = useState<GenerationTask[]>([]);
+
+  const refresh = useCallback(async () => {
+    if (taskIds.length === 0) {
+      setTasks([]);
+      return;
+    }
+    try {
+      const result = await invoke<GenerationTask[]>("list_generation_tasks", { limit: 80 });
+      const wanted = new Set(taskIds);
+      setTasks(result.filter((task) => wanted.has(task.id)));
+    } catch {
+      setTasks([]);
+    }
+  }, [taskIds]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (taskIds.length === 0) return;
+    const hasPending = tasks.length === 0 || tasks.some((task) => task.status === "queued" || task.status === "running");
+    if (!hasPending) return;
+    const timer = window.setInterval(refresh, 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, taskIds.length, tasks]);
+
+  if (taskIds.length === 0 || tasks.length === 0) return null;
+
+  return (
+    <div style={{ width: "min(760px, 100%)", display: "flex", flexDirection: "column", gap: 10, margin: "4px 0 14px 42px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", fontWeight: 760 }}>
+        <Icon name="clock" size={14} />
+        {text("\u751f\u6210\u4efb\u52a1", "Generation tasks")}
+      </div>
+      {tasks.map((task) => (
+        <ChatGenerationTaskCard key={task.id} task={task} onToast={onToast} />
+      ))}
+    </div>
+  );
+}
+
+function ChatGenerationTaskCard({ task, onToast }: { task: GenerationTask; onToast: (text: string) => void }) {
+  const { text } = useLanguage();
+  const output = taskOutputPath(task);
+  const title = task.taskType.replaceAll("_", " ");
+  const statusText =
+    task.status === "success"
+      ? text("\u5df2\u5b8c\u6210", "Complete")
+      : task.status === "error"
+        ? text("\u5931\u8d25", "Failed")
+        : task.status === "running"
+          ? text("\u751f\u6210\u4e2d", "Running")
+          : text("\u6392\u961f\u4e2d", "Queued");
+  const statusColor =
+    task.status === "success"
+      ? "var(--success)"
+      : task.status === "error"
+        ? "var(--danger)"
+        : task.status === "running"
+          ? "var(--accent-warm)"
+          : "var(--accent-blue)";
+
+  if (task.status === "success" && task.outputPaths.modelPath) {
+    return (
+      <ThreeDAssetCard
+        asset={{
+          modelPath: task.outputPaths.modelPath,
+          image2D: task.outputPaths.image2D || undefined,
+          imageNormal: task.outputPaths.imageNormal || undefined,
+          imageUV: task.outputPaths.imageUV || undefined,
+        }}
+      />
+    );
+  }
+
+  if (task.status === "success" && task.outputPaths.imagePath) {
+    return <ImageAssetCard image={{ label: basename(task.outputPaths.imagePath), path: task.outputPaths.imagePath }} onToast={onToast} />;
+  }
+
+  if (task.status === "success" && task.outputPaths.videoPath) {
+    return (
+      <div className="surface" style={{ width: "min(560px, 100%)", borderRadius: 16, overflow: "hidden" }}>
+        <video src={assetUrl(task.outputPaths.videoPath)} controls style={{ width: "100%", display: "block", background: "var(--bg-input)", maxHeight: 360 }} />
+        <div style={{ padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 820 }}>{text("\u89c6\u9891\u5df2\u751f\u6210", "Video generated")}</div>
+            <div title={task.outputPaths.videoPath} style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{basename(task.outputPaths.videoPath)}</div>
+          </div>
+          <button className="icon-button" onClick={() => navigator.clipboard.writeText(task.outputPaths.videoPath || "")} title={text("\u590d\u5236\u8def\u5f84", "Copy path")}><Icon name="copy" size={15} /></button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="surface" style={{ width: "min(560px, 100%)", borderRadius: 14, padding: 12, borderColor: task.status === "error" ? "rgba(184,59,59,0.22)" : undefined }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ width: 9, height: 9, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
+        <b style={{ fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{title}</b>
+        <span style={{ fontSize: 11, color: statusColor, fontWeight: 800 }}>{statusText}</span>
+      </div>
+      <div style={{ marginTop: 7, fontSize: 12, color: "var(--text-muted)" }}>
+        {text("\u4efb\u52a1 ID\uff1a", "Task ID: ")}<code>{task.id}</code>
+      </div>
+      {task.error && <div style={{ marginTop: 7, fontSize: 12, color: "var(--danger)", lineHeight: 1.5 }}>{task.error}</div>}
+      {output && <div style={{ marginTop: 7, fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{output}</div>}
+    </div>
+  );
 }
 
 function AttachmentTile({ path, onRemove, compact = false }: { path: string; onRemove?: () => void; compact?: boolean }) {
@@ -1252,6 +1402,7 @@ export default function ChatPanel() {
               </div>
             );
           })}
+          <ChatGenerationTasks messages={messages} onToast={setToast} />
         </div>
       </div>
 
