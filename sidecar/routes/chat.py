@@ -80,7 +80,6 @@ from services.chat_tool_results import (
     first_3d_result as _first_3d_result,
     first_tool_result as _first_tool_result,
     requires_manual_comfy_start as _requires_manual_comfy_start,
-    result_output_paths as _result_output_paths,
 )
 from services.chat_messages import (
     remove_internal_source_message as _remove_internal_source_message,
@@ -105,6 +104,13 @@ from services.chat_paths import (
     is_document_path as _is_document_path,
     nearby_path_suggestions as _nearby_path_suggestions,
     resolve_local_path as _resolve_local_path,
+)
+from services.chat_router import (
+    ROUTER_ACTIONS,
+    build_agent_trace_payload as _build_agent_trace_payload,
+    direct_agent_trace_decision as _direct_agent_trace_decision,
+    format_agent_trace_block as _format_agent_trace_block,
+    router_safe_json as _router_safe_json,
 )
 
 router = APIRouter()
@@ -1534,45 +1540,6 @@ async def _build_visual_edit_prompt(
         return user_request
 
 
-ROUTER_ACTIONS = {
-    "chat",
-    "general_tools",
-    "generate_image",
-    "generate_video",
-    "edit_image",
-    "generate_3d_text",
-    "generate_3d_image",
-    "generate_3d_fusion",
-    "generate_multiview_images",
-    "generate_3d_multiview",
-    "project_document_image",
-    "project_document_3d",
-    "attachment_document_image",
-    "attachment_document_3d",
-    "read_document",
-    "create_docx",
-    "edit_docx",
-    "folder_summary_docx",
-    "create_text_file",
-    "choose_implementation",
-}
-
-
-def _router_safe_json(text: str) -> dict:
-    try:
-        payload = json.loads(text or "{}")
-        return payload if isinstance(payload, dict) else {}
-    except Exception:
-        match = re.search(r"\{.*\}", text or "", re.S)
-        if not match:
-            return {}
-        try:
-            payload = json.loads(match.group(0))
-            return payload if isinstance(payload, dict) else {}
-        except Exception:
-            return {}
-
-
 async def _build_router_context(req: ChatRequest, capabilities: dict | None = None) -> dict:
     latest_image = await _find_latest_edit_source_image(req.conversation_id)
     latest_multiview = await _find_latest_multiview_paths(req.conversation_id)
@@ -1609,26 +1576,8 @@ async def _agent_trace_block(
 ) -> str:
     capabilities = _model_capabilities(provider_config, req.vision_enabled)
     context = await _build_router_context(req, capabilities)
-    trace = {
-        "model": provider_config[1] if provider_config else "",
-        "provider": provider_config[0] if provider_config else "",
-        "vision": bool(req.vision_enabled),
-        "vision_reason": capabilities.get("vision_reason", ""),
-        "action": (decision or {}).get("action", "chat"),
-        "tool": routed_result.get("tool") if isinstance(routed_result, dict) else "",
-        "source": (decision or {}).get("source", ""),
-        "reason": (decision or {}).get("reason", ""),
-        "prompt": (decision or {}).get("prompt", ""),
-        "source_files": (decision or {}).get("source_files") or [],
-        "attached_images": context.get("attached_images", []),
-        "attached_documents": context.get("attached_documents", []),
-        "project_documents": context.get("project_document_candidates", []),
-        "project_images": context.get("project_image_candidates", []),
-        "project_files": context.get("project_file_candidates", [])[:8],
-        "latest_active_image": context.get("latest_active_image", ""),
-        "outputs": _result_output_paths(routed_result),
-    }
-    return "\n\n[AGENT_TRACE]" + json.dumps(trace, ensure_ascii=False) + "[/AGENT_TRACE]"
+    trace = _build_agent_trace_payload(req, provider_config, capabilities, context, decision, routed_result)
+    return _format_agent_trace_block(trace)
 
 
 async def _direct_agent_trace_block(
@@ -1641,14 +1590,7 @@ async def _direct_agent_trace_block(
     source: str = "direct",
     source_files: list[str] | None = None,
 ) -> str:
-    decision = {
-        "action": action,
-        "tool": tool,
-        "source": source,
-        "source_files": source_files or [],
-        "reason": reason or "matched direct tool path",
-        "prompt": req.content,
-    }
+    decision = _direct_agent_trace_decision(req.content, action, tool, reason, source, source_files)
     routed_result = {"tool": tool, "result": result or {}}
     return await _agent_trace_block(req, provider_config, decision, routed_result)
 

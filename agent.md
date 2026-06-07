@@ -18,6 +18,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
+  - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
   - Direct file intent helpers and direct file response formatting: `sidecar/routes/direct_files.py`
@@ -103,6 +104,7 @@ Likely disposable tables:
 - Keep confirmation parsing and simple confirmed command/project-check dispatch out of `sidecar/routes/chat.py`; those helpers live in `sidecar/services/chat_confirmations.py`. Leave flows that need the chat LLM client in chat until they have a cleaner orchestration boundary.
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
+- Keep router constants, safe JSON parsing, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`. Router context gathering and action execution can stay in chat until those dependencies are split further.
 - Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
 - Keep DSML/textual tool parsing out of `sidecar/routes/chat.py`; parsing helpers live in `sidecar/services/textual_tool_parser.py`, while actual tool execution can remain in chat until it has stronger regression coverage.
 - SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
