@@ -1,4 +1,3 @@
-import datetime
 import traceback
 import json
 import asyncio
@@ -88,6 +87,7 @@ from services.chat_messages import (
     save_assistant_message as _save_assistant_message,
     save_user_message as _save_user_message,
     save_visible_user_message as _save_visible_user_message,
+    utc_iso as _utc_iso,
 )
 from services.chat_paths import (
     DOCX_PATH_PATTERN,
@@ -1948,7 +1948,7 @@ async def _maybe_generate_title(db, conversation_id: str, user_content: str, mod
         )
         title = response.choices[0].message.content.strip().strip('"').strip("'")
         if title:
-            now = datetime.datetime.utcnow().isoformat()
+            now = _utc_iso()
             await db.execute(
                 "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
                 (title, now, conversation_id),

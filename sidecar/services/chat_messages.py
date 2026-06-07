@@ -3,9 +3,13 @@ import uuid
 from typing import Any
 
 
+def utc_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat()
+
+
 async def save_user_message(db, conversation_id: str, content: str):
     user_id = uuid.uuid4().hex
-    now = datetime.datetime.utcnow().isoformat()
+    now = utc_iso()
     await db.execute(
         "INSERT INTO stm_entries (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
         (user_id, conversation_id, "user", content, now),
@@ -32,7 +36,7 @@ async def remove_internal_source_message(db, req: Any):
 
 async def save_assistant_message(db, conversation_id: str, content: str):
     assistant_id = uuid.uuid4().hex
-    assistant_now = datetime.datetime.utcnow().isoformat()
+    assistant_now = utc_iso()
     await db.execute(
         "INSERT INTO stm_entries (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
         (assistant_id, conversation_id, "assistant", content, assistant_now),
