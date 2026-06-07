@@ -92,8 +92,10 @@ from services.chat_messages import (
     utc_iso as _utc_iso,
 )
 from services.chat_intents import (
+    is_memory_intent as _is_memory_intent,
     is_folder_summary_to_docx_intent as _is_folder_summary_to_docx_intent,
     is_open_folder_intent as _is_open_folder_intent,
+    requests_multiview_followup as _requests_multiview_followup,
 )
 from services.chat_asset_prompts import (
     contains_any as _contains_any,
@@ -156,13 +158,6 @@ MULTIVIEW_CONTEXT_PATTERNS = {
         re.compile(r'back_path["\']?\s*[:=]\s*["\']([^"\']+)["\']'),
     ],
 }
-
-
-def _is_memory_intent(content: str) -> bool:
-    text = (content or "").lower()
-    if any(word in text for word in ["删除", "删了", "删掉", "移除", "理解错", "误解"]):
-        return False
-    return any(word in text for word in ["记住", "记一下", "remember", "别忘", "偏好"])
 
 
 async def _project_path_for_request(req: ChatRequest) -> str | None:
@@ -1102,14 +1097,6 @@ def _is_modify_previous_3d_intent(content: str, image_paths: list[str] | None = 
         word in text for word in preference_words
     )
     return has_previous_ref and (has_explicit_edit or has_attribute_change)
-
-
-def _requests_multiview_followup(content: str) -> bool:
-    text = (content or "").lower()
-    return any(
-        word in text
-        for word in ["三视图", "三视角", "多视图", "多视角", "前左后", "正面、左侧、背面"]
-    )
 
 
 async def _find_latest_edit_source_image(conversation_id: str) -> str | None:
