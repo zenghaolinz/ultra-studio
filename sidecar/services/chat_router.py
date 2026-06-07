@@ -43,6 +43,11 @@ def router_safe_json(text: str) -> dict:
             return {}
 
 
+def quality_mode_from_decision(decision: dict | None) -> str:
+    mode = str((decision or {}).get("quality_mode") or "").strip().lower()
+    return "quality" if mode == "quality" else "fast"
+
+
 def build_agent_trace_payload(
     req,
     provider_config,

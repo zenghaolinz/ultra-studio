@@ -11,6 +11,7 @@ from services.chat_router import (
     build_agent_trace_payload,
     direct_agent_trace_decision,
     format_agent_trace_block,
+    quality_mode_from_decision,
     router_safe_json,
 )
 
@@ -25,6 +26,11 @@ class ChatRouterTests(unittest.TestCase):
         self.assertEqual(router_safe_json("prefix {\"action\":\"chat\"} suffix"), {"action": "chat"})
         self.assertEqual(router_safe_json("[1, 2]"), {})
         self.assertEqual(router_safe_json("not json"), {})
+
+    def test_quality_mode_defaults_to_fast(self) -> None:
+        self.assertEqual(quality_mode_from_decision({"quality_mode": "quality"}), "quality")
+        self.assertEqual(quality_mode_from_decision({"quality_mode": "slow"}), "fast")
+        self.assertEqual(quality_mode_from_decision(None), "fast")
 
     def test_build_agent_trace_payload_includes_context_and_outputs(self) -> None:
         req = type("Req", (), {"vision_enabled": True})()

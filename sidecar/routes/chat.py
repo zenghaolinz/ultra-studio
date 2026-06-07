@@ -115,6 +115,7 @@ from services.chat_router import (
     build_agent_trace_payload as _build_agent_trace_payload,
     direct_agent_trace_decision as _direct_agent_trace_decision,
     format_agent_trace_block as _format_agent_trace_block,
+    quality_mode_from_decision as _quality_mode_from_decision,
     router_safe_json as _router_safe_json,
 )
 
@@ -470,11 +471,6 @@ def _is_previous_image_edit_intent(content: str) -> bool:
         "换成",
     ]
     return any(word in text for word in previous_words) and any(word in text for word in edit_words)
-
-
-def _quality_mode_from_decision(decision: dict | None) -> str:
-    mode = str((decision or {}).get("quality_mode") or "").strip().lower()
-    return "quality" if mode == "quality" else "fast"
 
 
 async def _inject_request_image_context(conversation_id: str, image_paths: list[str] | None):
