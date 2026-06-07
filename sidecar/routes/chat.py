@@ -37,6 +37,7 @@ from services.chat_response_formatters import (
     format_3d_response as _format_3d_response,
     format_command_tool_response as _format_command_tool_response,
     format_delete_tool_response as _format_delete_tool_response,
+    format_folder_summary_response as _format_folder_summary_response,
     format_image_response as _format_image_response,
     format_project_check_response as _format_project_check_response,
     format_text_edit_response as _format_text_edit_response,
@@ -87,6 +88,10 @@ from services.chat_messages import (
     save_user_message as _save_user_message,
     save_visible_user_message as _save_visible_user_message,
     utc_iso as _utc_iso,
+)
+from services.chat_intents import (
+    is_folder_summary_to_docx_intent as _is_folder_summary_to_docx_intent,
+    is_open_folder_intent as _is_open_folder_intent,
 )
 from services.chat_paths import (
     DOCX_PATH_PATTERN,
@@ -187,14 +192,6 @@ def _with_project_context(content: str, project_path: str | None) -> str:
     )
 
 
-def _is_folder_summary_to_docx_intent(content: str) -> bool:
-    text = (content or "").lower()
-    has_folder_word = any(word in text for word in ["文件夹", "目录", "folder", "directory"])
-    has_summary_word = any(word in text for word in ["阅读", "读取", "整理", "总结", "重点", "提取", "汇总", "归纳"])
-    has_output_word = any(word in text for word in ["新文档", "docx", "word", "写入", "生成文档", "输出文档", "报告"])
-    return has_folder_word and has_summary_word and has_output_word
-
-
 def _folder_documents(folder: Path, recursive: bool = False, limit: int = 12) -> list[Path]:
     iterator = folder.rglob("*") if recursive else folder.iterdir()
     docs = []
@@ -287,23 +284,6 @@ async def _summarize_folder_documents(req: ChatRequest, client, model_name: str)
         create_result["document_count"] = len(docs)
         create_result["documents"] = [str(doc) for doc in docs]
     return create_result
-
-
-def _format_folder_summary_response(result: dict) -> str:
-    if result.get("needs_path"):
-        return result.get("message") or _format_path_resolution_card("", [])
-    if result.get("ok"):
-        return (
-            f"已阅读文件夹中的 {result.get('document_count', 0)} 个文档，并生成整理文档：`{result.get('path')}`"
-        )
-    return f"整理文件夹文档失败：{result.get('error', '未知错误')}"
-
-
-def _is_open_folder_intent(content: str) -> bool:
-    text = (content or "").lower()
-    return any(word in text for word in ["打开", "显示", "定位", "open", "reveal"]) and any(
-        word in text for word in ["文件夹", "目录", "folder", "directory", "项目"]
-    )
 
 
 def _run_open_folder_request(req: ChatRequest) -> dict | None:

@@ -10,6 +10,7 @@ from services.chat_response_formatters import (
     format_3d_response,
     format_command_tool_response,
     format_delete_tool_response,
+    format_folder_summary_response,
     format_image_response,
     format_project_check_response,
     format_text_edit_response,
@@ -110,6 +111,15 @@ class ChatResponseFormatterTests(unittest.TestCase):
 
         self.assertIn("项目检查失败：`E:/project`", response)
         self.assertIn("命令执行失败：`npm test`", response)
+
+
+    def test_format_folder_summary_response_reports_path_or_resolution(self) -> None:
+        response = format_folder_summary_response({"ok": True, "document_count": 2, "path": "C:/tmp/report.docx"})
+        self.assertIn("2", response)
+        self.assertIn("C:/tmp/report.docx", response)
+
+        needs_path = format_folder_summary_response({"needs_path": True})
+        self.assertIn("[PATH_RESOLUTION_REQUIRED]", needs_path)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,6 @@
+from services.chat_paths import format_path_resolution_card
+
+
 def format_image_response(tool_name: str, result: dict) -> str:
     status = result.get("status")
     task_id = result.get("task_id") or result.get("taskId")
@@ -214,3 +217,13 @@ def format_project_check_response(result: dict) -> str:
         lines.append("")
         lines.append(format_command_tool_response(item))
     return "\n".join(lines)
+
+
+def format_folder_summary_response(result: dict) -> str:
+    if result.get("needs_path"):
+        return result.get("message") or format_path_resolution_card("", [])
+    if result.get("ok"):
+        return (
+            f"已阅读文件夹中的 {result.get('document_count', 0)} 个文档，并生成整理文档：`{result.get('path')}`"
+        )
+    return f"整理文件夹文档失败：{result.get('error', '未知错误')}"

@@ -16,6 +16,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat routes and orchestration: `sidecar/routes/chat.py`
   - Chat response formatting helpers: `sidecar/services/chat_response_formatters.py`
   - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
+  - Chat intent predicates: `sidecar/services/chat_intents.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
@@ -102,6 +103,7 @@ Likely disposable tables:
 - Do not expose or log plaintext API keys.
 - Keep pure chat response formatting out of `sidecar/routes/chat.py`; add formatters to `sidecar/services/chat_response_formatters.py` and alias imports in chat when preserving old call names reduces risk.
 - Keep confirmation parsing and simple confirmed command/project-check dispatch out of `sidecar/routes/chat.py`; those helpers live in `sidecar/services/chat_confirmations.py`. Leave flows that need the chat LLM client in chat until they have a cleaner orchestration boundary.
+- Keep reusable chat intent predicates out of `sidecar/routes/chat.py`; use `sidecar/services/chat_intents.py` for small intent detectors that do not need DB/model context.
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
 - Keep router constants, safe JSON parsing, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`. Router context gathering and action execution can stay in chat until those dependencies are split further.
