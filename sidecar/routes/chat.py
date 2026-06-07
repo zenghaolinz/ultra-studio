@@ -4,7 +4,6 @@ import json
 import asyncio
 import os
 import re
-import shutil
 import base64
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -90,77 +89,27 @@ from services.chat_messages import (
     save_user_message as _save_user_message,
     save_visible_user_message as _save_visible_user_message,
 )
+from services.chat_paths import (
+    DOCX_PATH_PATTERN,
+    DOCUMENT_EXTENSIONS,
+    FOLDER_SUMMARY_EXTENSIONS,
+    GENERATED_TEXT_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    TEXT_FILE_PATH_PATTERN,
+    candidate_local_paths as _candidate_local_paths,
+    document_attachments as _document_attachments,
+    extract_directory_path as _extract_directory_path,
+    find_desktop_directory_by_mention as _find_desktop_directory_by_mention,
+    format_path_resolution_card as _format_path_resolution_card,
+    image_attachments as _image_attachments,
+    is_document_path as _is_document_path,
+    nearby_path_suggestions as _nearby_path_suggestions,
+    resolve_local_path as _resolve_local_path,
+)
 
 router = APIRouter()
 
 MAX_TOOL_CALL_ROUNDS = 6
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
-DOCUMENT_EXTENSIONS = {
-    ".txt",
-    ".md",
-    ".markdown",
-    ".csv",
-    ".json",
-    ".jsonl",
-    ".yaml",
-    ".yml",
-    ".xml",
-    ".html",
-    ".css",
-    ".js",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".py",
-    ".rs",
-    ".toml",
-    ".ini",
-    ".log",
-    ".pdf",
-    ".docx",
-}
-
-FOLDER_SUMMARY_EXTENSIONS = DOCUMENT_EXTENSIONS
-GENERATED_TEXT_EXTENSIONS = {
-    ".txt",
-    ".md",
-    ".markdown",
-    ".csv",
-    ".json",
-    ".jsonl",
-    ".yaml",
-    ".yml",
-    ".xml",
-    ".html",
-    ".htm",
-    ".css",
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".py",
-    ".rs",
-    ".toml",
-    ".ini",
-    ".log",
-}
-
-DOCX_PATH_PATTERN = re.compile(
-    r"`([^`]+\.docx)`|([A-Za-z]:[\\/][^\s`\"'，。；;]+\.docx)",
-    re.IGNORECASE,
-)
-
-TEXT_FILE_PATH_PATTERN = re.compile(
-    r"`([^`]+\.(?:html?|css|jsx?|tsx?|py|txt|md|markdown|csv|json|jsonl|ya?ml|xml|rs|toml|ini|log))`"
-    r"|([A-Za-z]:[\\/][^\s`\"'，。；;]+\.(?:html?|css|jsx?|tsx?|py|txt|md|markdown|csv|json|jsonl|ya?ml|xml|rs|toml|ini|log))",
-    re.IGNORECASE,
-)
-
-LOCAL_PATH_PATTERN = re.compile(
-    r"([A-Za-z]:[\\/][^\s`\"'，。；;]+|(?:Desktop|desktop|桌面)[\\/][^\s`\"'，。；;]+)"
-)
 
 ASSET_IMAGE_PATTERNS = [
     re.compile(r'活跃生成图片路径="([^"]+)"'),
@@ -197,55 +146,6 @@ def _is_memory_intent(content: str) -> bool:
     return any(word in text for word in ["记住", "记一下", "remember", "别忘", "偏好"])
 
 
-def _is_document_path(path: str) -> bool:
-    return os.path.splitext(path)[1].lower() in DOCUMENT_EXTENSIONS
-
-
-def _document_attachments(paths: list[str] | None) -> list[str]:
-    return [path for path in paths or [] if _is_document_path(path)]
-
-
-def _image_attachments(paths: list[str] | None) -> list[str]:
-    return [
-        path
-        for path in paths or []
-        if os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
-    ]
-
-
-def _candidate_local_paths(content: str) -> list[str]:
-    text = content or ""
-    candidates: list[str] = []
-    for pattern in [
-        r"`([^`]+)`",
-        r'"([^"]+)"',
-        r"'([^']+)'",
-        r"“([^”]+)”",
-    ]:
-        candidates.extend(match.strip() for match in re.findall(pattern, text) if match.strip())
-    candidates.extend(match.group(1).strip() for match in LOCAL_PATH_PATTERN.finditer(text))
-
-    seen = set()
-    unique = []
-    for item in candidates:
-        key = item.lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-    return unique
-
-
-def _resolve_local_path(path_text: str) -> Path:
-    path = path_text.strip().strip("`\"'")
-    lowered = path.lower().replace("\\", "/")
-    if lowered == "desktop" or lowered == "桌面":
-        return Path.home() / "Desktop"
-    if lowered.startswith("desktop/") or lowered.startswith("桌面/"):
-        _, rest = path.replace("\\", "/", 1).split("/", 1)
-        return Path.home() / "Desktop" / rest
-    return Path(os.path.expandvars(os.path.expanduser(path))).resolve()
-
-
 async def _project_path_for_request(req: ChatRequest) -> str | None:
     if req.project_path:
         root = Path(os.path.expandvars(os.path.expanduser(req.project_path))).resolve()
@@ -279,114 +179,6 @@ def _with_project_context(content: str, project_path: str | None) -> str:
         "项目规则：如果用户没有给出其他明确路径，读取、列出、创建、修改、整理文件时都默认在这个项目文件夹内完成。"
         "不要主动访问项目文件夹之外的内容；如果用户要求打开文件夹，就打开这个项目文件夹或其子路径。"
     )
-
-
-def _find_desktop_directory_by_mention(content: str) -> Path | None:
-    text = content or ""
-    lowered = text.lower()
-    if "桌面" not in text and "desktop" not in lowered:
-        return None
-
-    desktop = Path.home() / "Desktop"
-    if not desktop.exists() or not desktop.is_dir():
-        return None
-
-    matches: list[Path] = []
-    compact_text = re.sub(r"\s+", "", lowered)
-    try:
-        children = list(desktop.iterdir())
-    except OSError:
-        return None
-
-    for child in children:
-        if not child.is_dir():
-            continue
-        name = child.name.lower()
-        compact_name = re.sub(r"\s+", "", name)
-        if name in lowered or compact_name in compact_text:
-            matches.append(child)
-
-    if not matches:
-        return None
-    return sorted(matches, key=lambda path: len(path.name), reverse=True)[0]
-
-
-def _nearby_path_suggestions(content: str, limit: int = 5) -> list[dict]:
-    text = content or ""
-    lowered = text.lower()
-    roots = []
-    if "桌面" in text or "desktop" in lowered:
-        roots.append(Path.home() / "Desktop")
-    roots.append(Path.cwd())
-
-    seen_roots = set()
-    items: list[tuple[float, Path]] = []
-    compact_text = re.sub(r"\s+", "", lowered)
-    for root in roots:
-        try:
-            root = root.resolve()
-        except OSError:
-            continue
-        if str(root).lower() in seen_roots or not root.exists() or not root.is_dir():
-            continue
-        seen_roots.add(str(root).lower())
-        try:
-            children = list(root.iterdir())
-        except OSError:
-            continue
-        for child in children:
-            name = child.name.lower()
-            compact_name = re.sub(r"\s+", "", name)
-            score = SequenceMatcher(None, compact_name, compact_text).ratio()
-            if name in lowered or compact_name in compact_text:
-                score += 1.0
-            if child.is_dir():
-                score += 0.08
-            if score >= 0.18:
-                items.append((score, child))
-
-    items.sort(key=lambda item: item[0], reverse=True)
-    suggestions = []
-    seen_paths = set()
-    for _, path in items:
-        key = str(path).lower()
-        if key in seen_paths:
-            continue
-        seen_paths.add(key)
-        suggestions.append({
-            "name": path.name,
-            "path": str(path),
-            "type": "文件夹" if path.is_dir() else "文件",
-        })
-        if len(suggestions) >= limit:
-            break
-    return suggestions
-
-
-def _extract_directory_path(content: str) -> Path | None:
-    for candidate in _candidate_local_paths(content):
-        try:
-            path = _resolve_local_path(candidate)
-        except OSError:
-            continue
-        if path.exists() and path.is_dir():
-            return path
-    fuzzy_desktop = _find_desktop_directory_by_mention(content)
-    if fuzzy_desktop:
-        return fuzzy_desktop
-    return None
-
-
-def _format_path_resolution_card(query: str, suggestions: list[dict]) -> str:
-    lines = [
-        "[PATH_RESOLUTION_REQUIRED]",
-        f"查询: {query}",
-        "候选:",
-    ]
-    for item in suggestions:
-        lines.append(f"- {item.get('type', '路径')}: `{item.get('path')}`")
-    lines.append("[/PATH_RESOLUTION_REQUIRED]")
-    return "\n".join(lines)
 
 
 def _is_folder_summary_to_docx_intent(content: str) -> bool:
