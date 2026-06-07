@@ -31,6 +31,7 @@ from routes.chat import (
 )
 from schemas import ChatRequest
 from tools import file_tools
+from routes.direct_files import format_delete_then_create_response
 
 
 class AgentCommandConfirmTests(unittest.IsolatedAsyncioTestCase):
@@ -77,6 +78,28 @@ class AgentCommandConfirmTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response.startswith("已创建文件：`C:\\tmp\\snake.html`"))
         self.assertIn("旧文件已删除。", response)
         self.assertNotIn("old.html`", response)
+
+    def test_delete_then_create_response_ignores_failed_create(self) -> None:
+        response = _format_delete_then_create_response(
+            {"ok": True, "message": "deleted"},
+            {"ok": False, "error": "create blocked"},
+        )
+
+        self.assertEqual(response, "deleted")
+
+    def test_direct_file_delete_then_create_formatter_is_shared(self) -> None:
+        response = format_delete_then_create_response(
+            {"ok": True, "message": "deleted"},
+            {
+                "ok": True,
+                "path": "C:\\tmp\\snake.html",
+                "name": "snake.html",
+                "files": [{"path": "C:\\tmp\\snake.html"}],
+            },
+        )
+
+        self.assertIn("C:\\tmp\\snake.html", response)
+        self.assertIn("旧文件已删除。", response)
 
     def test_text_file_edit_followup_detects_incremental_game_change(self) -> None:
         self.assertTrue(_is_text_file_edit_followup_intent("加入一个对手"))

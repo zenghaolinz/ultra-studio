@@ -182,14 +182,20 @@ def build_3d_tools_definition() -> list[dict]:
                         },
                         "duration_seconds": {
                             "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5,
                             "description": "视频时长，当前限制为 1 到 5 秒。默认 4。",
                         },
                         "width": {
                             "type": "integer",
+                            "minimum": 256,
+                            "maximum": 1280,
                             "description": "输出宽度，默认 1024。",
                         },
                         "height": {
                             "type": "integer",
+                            "minimum": 256,
+                            "maximum": 1280,
                             "description": "输出高度，默认 576。",
                         },
                     },

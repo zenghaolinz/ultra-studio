@@ -13,11 +13,15 @@ import uvicorn
 
 from db.sqlite import init_db, close_db
 from routes import chat, memory, config, persona, asset_3d, conversations, comfyui, mcp
+from services.generation_tasks import mark_interrupted_generation_tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    interrupted_count = await mark_interrupted_generation_tasks()
+    if interrupted_count:
+        print(f"[main] Marked {interrupted_count} interrupted generation task(s) after restart")
 
     yield
 

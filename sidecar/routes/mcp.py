@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 
-from memory.memory_map import build_3d_tools_definition
-from memory import manager as memory_mgr
+from services.mcp_tools import McpValidationError, call_mcp_tool, list_mcp_tools
 
 router = APIRouter()
 
@@ -12,15 +11,6 @@ def _jsonrpc_result(request_id, result):
 
 def _jsonrpc_error(request_id, code: int, message: str):
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
-
-
-def _mcp_tool_from_openai_tool(tool: dict) -> dict:
-    function = tool.get("function") or {}
-    return {
-        "name": function.get("name", ""),
-        "description": function.get("description", ""),
-        "inputSchema": function.get("parameters") or {"type": "object", "properties": {}},
-    }
 
 
 @router.post("")
@@ -40,30 +30,24 @@ async def mcp_jsonrpc(body: dict):
         )
 
     if method == "tools/list":
-        tools = [_mcp_tool_from_openai_tool(tool) for tool in build_3d_tools_definition()]
-        return _jsonrpc_result(request_id, {"tools": tools})
+        return _jsonrpc_result(request_id, {"tools": list_mcp_tools()})
 
     if method == "tools/call":
         name = params.get("name")
         arguments = params.get("arguments") or {}
-        if name == "generate_video":
-            result = memory_mgr.handle_generate_video(
-                arguments.get("prompt", ""),
-                arguments.get("image_path") or None,
-                arguments.get("quality_mode", "quality"),
-                int(arguments.get("duration_seconds", 4)),
-                int(arguments.get("width", 1024)),
-                int(arguments.get("height", 576)),
-                arguments.get("conversation_id") or None,
-            )
-            return _jsonrpc_result(
-                request_id,
-                {
-                    "content": [{"type": "text", "text": result.get("message", "Video generation queued")}],
-                    "structuredContent": result,
-                    "isError": result.get("status") == "error",
-                },
-            )
-        return _jsonrpc_error(request_id, -32601, f"Tool not supported yet: {name}")
+        try:
+            result = call_mcp_tool(name, arguments)
+        except KeyError:
+            return _jsonrpc_error(request_id, -32601, f"Tool not supported yet: {name}")
+        except McpValidationError as e:
+            return _jsonrpc_error(request_id, -32602, str(e))
+        return _jsonrpc_result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": result.get("message", f"{name} completed")}],
+                "structuredContent": result,
+                "isError": result.get("status") == "error",
+            },
+        )
 
     return _jsonrpc_error(request_id, -32601, f"Unsupported MCP method: {method}")

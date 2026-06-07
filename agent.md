@@ -14,9 +14,15 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Commands for chat, queue, settings, filesystem, and sidecar control.
 - Python sidecar: `sidecar/`
   - Chat routes and orchestration: `sidecar/routes/chat.py`
-  - Generation task API: `sidecar/routes/asset_3d.py`
-  - Tool registry/execution and queue insertion: `sidecar/memory/manager.py`
-  - Database helpers: `sidecar/db.py`
+  - Chat response formatting helpers: `sidecar/services/chat_response_formatters.py`
+  - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
+  - Direct file intent helpers and direct file response formatting: `sidecar/routes/direct_files.py`
+  - 3D/generation HTTP routes: `sidecar/routes/asset_3d.py`
+  - Generation task CRUD/list/cancel helpers: `sidecar/services/generation_tasks.py`
+  - Generation runtime queue counters and ComfyUI readiness: `sidecar/services/generation_runtime.py`
+  - MCP tool registry/execution: `sidecar/services/mcp_tools.py`
+  - Chat tool execution and queue insertion: `sidecar/memory/manager.py`
+  - Database helpers and migrations: `sidecar/db/sqlite.py`
 
 ## Useful Commands
 
@@ -28,6 +34,12 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
 ## Current Queue Model
 
 Generation is stored in SQLite `generation_tasks`. Image, video, and model generation tools enqueue work and return a task ID immediately, so the chat can continue. Background workers update task status and write outputs into `outputPaths`.
+
+Task table access should go through `sidecar/services/generation_tasks.py`. `asset_3d.py`, chat tools, MCP tools, and future queue UIs should not each hand-roll inserts, updates, list conversion, or cancellation.
+
+In-process queue counters live in a `GenerationRuntimeState` instance inside `sidecar/services/generation_runtime.py`. The module-level functions remain as compatibility wrappers, but new tests or future schedulers can inject an isolated runtime state.
+
+On sidecar startup, `sidecar/main.py` calls `mark_interrupted_generation_tasks()` to turn leftover `running` rows from a previous process into `error` tasks. Do not leave restarted worker-less tasks in `running`; add explicit retry/resume behavior before changing this policy.
 
 Important output keys:
 
@@ -45,7 +57,9 @@ For portable ComfyUI, startup can use its configured launch script. For desktop 
 
 ## MCP Direction
 
-There is an early MCP-style endpoint in the sidecar. Keep moving tools toward a protocol boundary:
+There is an early MCP-style endpoint in the sidecar. Tool metadata, basic argument validation, numeric range validation, and `tools/call` execution now route through `sidecar/services/mcp_tools.py`; avoid adding new `if/elif` branches directly in `routes/mcp.py`.
+
+Keep moving tools toward a protocol boundary:
 
 - Tool metadata should be discoverable.
 - Tool calls should be routed through one executor.
@@ -81,4 +95,7 @@ Likely disposable tables:
 - Keep edits scoped; this repo has had dirty history, so inspect before changing.
 - Use structured parsing and typed models where possible.
 - Do not expose or log plaintext API keys.
+- Keep pure chat response formatting out of `sidecar/routes/chat.py`; add formatters to `sidecar/services/chat_response_formatters.py` and alias imports in chat when preserving old call names reduces risk.
+- Keep DSML/textual tool parsing out of `sidecar/routes/chat.py`; parsing helpers live in `sidecar/services/textual_tool_parser.py`, while actual tool execution can remain in chat until it has stronger regression coverage.
+- SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
 - Run `npm run check` after frontend changes and `cargo check --manifest-path src-tauri/Cargo.toml` after Tauri command changes.

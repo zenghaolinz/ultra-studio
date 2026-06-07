@@ -95,6 +95,18 @@ class GenerationRuntimeTests(unittest.TestCase):
 
         self.assertEqual(order, ["first-start", "first-end", "second"])
 
+    def test_runtime_state_instances_are_isolated(self) -> None:
+        first_state = generation_runtime.GenerationRuntimeState()
+        second_state = generation_runtime.GenerationRuntimeState()
+
+        with generation_runtime.generation_slot(runtime_state=first_state):
+            first = generation_runtime.generation_queue_state(False, runtime_state=first_state)
+            second = generation_runtime.generation_queue_state(False, runtime_state=second_state)
+
+        self.assertEqual(first["active"], 1)
+        self.assertEqual(second["active"], 0)
+        self.assertEqual(second["waiting"], 0)
+
     def test_low_gpu_memory_queues_generation(self) -> None:
         with patch.object(
             generation_runtime,

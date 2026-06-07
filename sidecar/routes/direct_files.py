@@ -850,3 +850,16 @@ def format_text_file_create_response(result: dict) -> str:
     path = result.get("path", "")
     name = result.get("name") or Path(path).name
     return f"已创建文件：`{path}`\n\n{name}"
+
+
+def format_delete_then_create_response(delete_result: dict, create_result: dict | None) -> str:
+    if not create_result or not create_result.get("ok"):
+        if delete_result.get("needs_confirmation") and delete_result.get("message"):
+            return delete_result["message"]
+        if delete_result.get("ok") and delete_result.get("message"):
+            return delete_result["message"]
+        return f"删除失败：{delete_result.get('error') or delete_result.get('message') or '未知错误'}"
+    create_text = format_text_file_create_response(create_result)
+    if delete_result.get("ok"):
+        return f"{create_text}\n\n旧文件已删除。"
+    return f"{create_text}\n\n旧文件删除失败：{delete_result.get('error') or delete_result.get('message') or '未知错误'}"

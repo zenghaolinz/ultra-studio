@@ -167,57 +167,58 @@ async def _migrate():
     await _run_statements(conn, CREATE_STATEMENTS)
     await conn.commit()
 
-    cursor = await conn.execute("PRAGMA table_info(conversations)")
-    cols = [row[1] async for row in cursor]
+    try:
+        await conn.execute("BEGIN")
 
-    if "branch_id" in cols:
-        print("[db] Running migration: removing branch_id from conversations")
-        await _run_statements(conn, MIGRATIONS)
+        cursor = await conn.execute("PRAGMA table_info(conversations)")
+        cols = [row[1] async for row in cursor]
+
+        if "branch_id" in cols:
+            print("[db] Running migration: removing branch_id from conversations")
+            await _run_statements(conn, MIGRATIONS)
+            print("[db] Migration complete")
+
+        print("[db] Cleaning up old LTM tables")
+        await _run_statements(conn, CLEANUP_STMTS)
+        print("[db] Cleanup complete")
+
+        cursor = await conn.execute("PRAGMA table_info(stm_entries)")
+        cols = [row[1] async for row in cursor]
+        if "visible" not in cols:
+            print("[db] Running migration: adding visible column to stm_entries")
+            await _run_statements(conn, MIGRATIONS_VISIBLE)
+            print("[db] visible migration complete")
+
+        cursor = await conn.execute("PRAGMA table_info(conversations)")
+        cols = [row[1] async for row in cursor]
+        if "project_id" not in cols:
+            print("[db] Running migration: adding project_id to conversations")
+            await _run_statements(conn, MIGRATIONS_PROJECTS)
+            print("[db] project_id migration complete")
+
+        cursor = await conn.execute("PRAGMA table_info(generation_tasks)")
+        cols = [row[1] async for row in cursor]
+        for stmt in MIGRATIONS_GENERATION_TASKS:
+            column = stmt.split(" ADD COLUMN ", 1)[1].split(" ", 1)[0]
+            if column not in cols:
+                print(f"[db] Running migration: adding {column} to generation_tasks")
+                await conn.execute(stmt)
+        cursor = await conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generation_tasks'"
+        )
+        row = await cursor.fetchone()
+        table_sql = row[0] if row else ""
+        if "queued" not in table_sql:
+            print("[db] Running migration: widening generation_tasks status check")
+            await _run_statements(conn, MIGRATIONS_GENERATION_TASK_STATUS_CHECK)
+
+        await _run_statements(conn, POST_MIGRATION_STATEMENTS)
         await conn.commit()
-        print("[db] Migration complete")
-
-    print("[db] Cleaning up old LTM tables")
-    await _run_statements(conn, CLEANUP_STMTS)
-    await conn.commit()
-    print("[db] Cleanup complete")
-
-    cursor = await conn.execute("PRAGMA table_info(stm_entries)")
-    cols = [row[1] async for row in cursor]
-    if "visible" not in cols:
-        print("[db] Running migration: adding visible column to stm_entries")
-        await _run_statements(conn, MIGRATIONS_VISIBLE)
-        await conn.commit()
-        print("[db] visible migration complete")
-
-    cursor = await conn.execute("PRAGMA table_info(conversations)")
-    cols = [row[1] async for row in cursor]
-    if "project_id" not in cols:
-        print("[db] Running migration: adding project_id to conversations")
-        await _run_statements(conn, MIGRATIONS_PROJECTS)
-        await conn.commit()
-        print("[db] project_id migration complete")
-
-    cursor = await conn.execute("PRAGMA table_info(generation_tasks)")
-    cols = [row[1] async for row in cursor]
-    for stmt in MIGRATIONS_GENERATION_TASKS:
-        column = stmt.split(" ADD COLUMN ", 1)[1].split(" ", 1)[0]
-        if column not in cols:
-            print(f"[db] Running migration: adding {column} to generation_tasks")
-            await conn.execute(stmt)
-            await conn.commit()
-    cursor = await conn.execute(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generation_tasks'"
-    )
-    row = await cursor.fetchone()
-    table_sql = row[0] if row else ""
-    if "queued" not in table_sql:
-        print("[db] Running migration: widening generation_tasks status check")
-        await _run_statements(conn, MIGRATIONS_GENERATION_TASK_STATUS_CHECK)
-        await conn.commit()
-
-    await _run_statements(conn, POST_MIGRATION_STATEMENTS)
-    await conn.commit()
-    await conn.close()
+    except Exception:
+        await conn.rollback()
+        raise
+    finally:
+        await conn.close()
 
 
 async def init_db():

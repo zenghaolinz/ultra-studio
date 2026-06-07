@@ -2,15 +2,20 @@ import os
 import json
 import asyncio
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from db.sqlite import get_db
+from services.generation_tasks import (
+    cancel_running_generation_tasks as _cancel_running_tasks,
+    create_running_generation_task as _create_task,
+    list_generation_tasks as list_generation_task_records,
+    update_generation_task as _update_task,
+)
 from services.generation_runtime import generation_queue_state
 from tools.comfy_client import (
     run_pipeline,
@@ -25,130 +30,12 @@ from tools.comfy_client import (
 
 router = APIRouter(prefix="/api/3d", tags=["3d"])
 executor = ThreadPoolExecutor(max_workers=2)
-
-
-async def _create_task(
-    task_type: str,
-    prompt: str = "",
-    quality_mode: str = "",
-    input_paths: list[str] | None = None,
-) -> str:
-    task_id = uuid.uuid4().hex
-    db = await get_db()
-    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-    await db.execute(
-        """
-        INSERT INTO generation_tasks
-        (id, task_type, status, prompt, quality_mode, input_paths, output_paths, error, created_at, updated_at)
-        VALUES (?, ?, 'running', ?, ?, ?, '{}', '', ?, ?)
-        """,
-        (
-            task_id,
-            task_type,
-            prompt or "",
-            quality_mode or "",
-            json.dumps(input_paths or [], ensure_ascii=False),
-            now,
-            now,
-        ),
-    )
-    await db.commit()
-    return task_id
-
-
-async def _update_task(
-    task_id: str | None,
-    status: str,
-    output_paths: dict | None = None,
-    error: str = "",
-) -> None:
-    if not task_id:
-        return
-    db = await get_db()
-    current = await db.execute_fetchall(
-        "SELECT status FROM generation_tasks WHERE id = ?",
-        (task_id,),
-    )
-    if current and current[0]["status"] == "cancelled" and status != "cancelled":
-        return
-    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-    completed_at = now if status in {"success", "error", "cancelled"} else None
-    await db.execute(
-        """
-        UPDATE generation_tasks
-        SET status = ?, output_paths = ?, error = ?, updated_at = ?, completed_at = ?
-        WHERE id = ?
-        """,
-        (
-            status,
-            json.dumps(output_paths or {}, ensure_ascii=False),
-            error or "",
-            now,
-            completed_at,
-            task_id,
-        ),
-    )
-    await db.commit()
-
-
-async def _cancel_running_tasks() -> None:
-    db = await get_db()
-    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-    await db.execute(
-        """
-        UPDATE generation_tasks
-        SET status = 'cancelled',
-            error = 'User cancelled generation',
-            updated_at = ?,
-            completed_at = ?
-        WHERE status = 'running'
-        """,
-        (now, now),
-    )
-    await db.commit()
-
-
-def _task_row_to_dict(row) -> dict:
-    try:
-        input_paths = json.loads(row["input_paths"] or "[]")
-    except Exception:
-        input_paths = []
-    try:
-        output_paths = json.loads(row["output_paths"] or "{}")
-    except Exception:
-        output_paths = {}
-    return {
-        "id": row["id"],
-        "taskType": row["task_type"],
-        "status": row["status"],
-        "conversationId": row["conversation_id"] if "conversation_id" in row.keys() else None,
-        "queuePosition": row["queue_position"] if "queue_position" in row.keys() else None,
-        "prompt": row["prompt"] or "",
-        "qualityMode": row["quality_mode"] or "",
-        "inputPaths": input_paths,
-        "outputPaths": output_paths,
-        "error": row["error"] or "",
-        "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"],
-        "completedAt": row["completed_at"],
-    }
+QualityMode = Literal["fast", "quality"]
 
 
 @router.get("/tasks")
 async def list_generation_tasks(limit: int = 30):
-    db = await get_db()
-    safe_limit = max(1, min(limit, 100))
-    rows = await db.execute_fetchall(
-        """
-        SELECT id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error,
-               created_at, updated_at, completed_at
-        FROM generation_tasks
-        ORDER BY datetime(updated_at) DESC, datetime(created_at) DESC
-        LIMIT ?
-        """,
-        (safe_limit,),
-    )
-    return [_task_row_to_dict(row) for row in rows]
+    return await list_generation_task_records(limit)
 
 
 @router.get("/queue")
@@ -330,25 +217,25 @@ def _make_multiview_sse_stream(image_paths: list[str], quality_mode: str):
 
 
 class ThreeDTextRequest(BaseModel):
-    prompt: str
-    quality_mode: str = "fast"
+    prompt: str = Field(min_length=1)
+    quality_mode: QualityMode = "fast"
 
 
 class ThreeDImageRequest(BaseModel):
-    image_path: str
-    quality_mode: str = "fast"
+    image_path: str = Field(min_length=1)
+    quality_mode: QualityMode = "fast"
 
 
 class ThreeDFusionRequest(BaseModel):
-    image1_path: str
-    image2_path: str
-    prompt: str
-    quality_mode: str = "fast"
+    image1_path: str = Field(min_length=1)
+    image2_path: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
+    quality_mode: QualityMode = "fast"
 
 
 class ThreeDMultiviewRequest(BaseModel):
-    image_paths: list[str]
-    quality_mode: str = "fast"
+    image_paths: list[str] = Field(min_length=3, max_length=4)
+    quality_mode: QualityMode = "fast"
 
 
 def _normalize_multiview_paths(image_paths: list[str]) -> list[str]:
@@ -376,37 +263,37 @@ def _validate_multiview_paths(image_paths: list[str]) -> list[str]:
 
 
 class ImproveImageRequest(BaseModel):
-    image_path: str
-    improvement_prompt: str
-    quality_mode: str = "fast"
+    image_path: str = Field(min_length=1)
+    improvement_prompt: str = Field(min_length=1)
+    quality_mode: QualityMode = "fast"
     image_lora_id: str | None = None
 
 
 class GenerateImageRequest(BaseModel):
-    prompt: str
-    quality_mode: str = "fast"
+    prompt: str = Field(min_length=1)
+    quality_mode: QualityMode = "fast"
     image_lora_id: str | None = None
 
 
 class GenerateMultiviewImagesRequest(BaseModel):
-    image_path: str
+    image_path: str = Field(min_length=1)
     prompt: str = ""
-    quality_mode: str = "fast"
+    quality_mode: QualityMode = "fast"
 
 
 class GenerateVideoRequest(BaseModel):
     image_path: str | None = None
-    prompt: str
-    quality_mode: str = "quality"
-    duration_seconds: int = 4
-    width: int = 1024
-    height: int = 576
-    standard_model: str = "5b"
+    prompt: str = Field(min_length=1)
+    quality_mode: QualityMode = "quality"
+    duration_seconds: int = Field(default=4, ge=1, le=5)
+    width: int = Field(default=1024, ge=256, le=1280)
+    height: int = Field(default=576, ge=256, le=1280)
+    standard_model: Literal["5b", "14b"] = "5b"
     lora_acceleration: bool = False
 
 
 class ShowcaseMaterialRequest(BaseModel):
-    title: str = "Ultra Studio 3D Asset"
+    title: str = Field(default="Ultra Studio 3D Asset", min_length=1, max_length=120)
     prompt: str = ""
     model_path: str | None = None
     image_path: str | None = None

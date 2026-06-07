@@ -47,12 +47,42 @@ COMFY_STARTING_STATUS = "ComfyUI 启动中/连接中"
 COMFY_MANUAL_START_STATUS = "请先启动 ComfyUI"
 COMFY_QUEUED_STATUS = "ComfyUI 生成队列中"
 
-_generation_lock = threading.Lock()
-_queue_lock = threading.Lock()
-_waiting_count = 0
-_active_count = 0
-
 MIN_FREE_VRAM_MB = 2048
+
+
+class GenerationRuntimeState:
+    def __init__(self):
+        self._generation_lock = threading.Lock()
+        self._queue_lock = threading.Lock()
+        self._waiting_count = 0
+        self._active_count = 0
+
+    def queue_state(self) -> dict:
+        with self._queue_lock:
+            return {
+                "active": self._active_count,
+                "waiting": self._waiting_count,
+                "busy": self._active_count > 0 or self._waiting_count > 0,
+            }
+
+    @contextmanager
+    def slot(self):
+        with self._queue_lock:
+            queue_position = self._active_count + self._waiting_count
+            self._waiting_count += 1
+        self._generation_lock.acquire()
+        with self._queue_lock:
+            self._waiting_count = max(0, self._waiting_count - 1)
+            self._active_count += 1
+        try:
+            yield {"queue_position": queue_position}
+        finally:
+            with self._queue_lock:
+                self._active_count = max(0, self._active_count - 1)
+            self._generation_lock.release()
+
+
+_default_runtime_state = GenerationRuntimeState()
 
 
 def is_generation_tool(name: str | None) -> bool:
@@ -104,40 +134,21 @@ def gpu_memory_state() -> dict:
     }
 
 
-def generation_queue_state(include_gpu: bool = True) -> dict:
-    with _queue_lock:
-        state = {
-            "active": _active_count,
-            "waiting": _waiting_count,
-            "busy": _active_count > 0 or _waiting_count > 0,
-        }
+def generation_queue_state(include_gpu: bool = True, runtime_state: GenerationRuntimeState | None = None) -> dict:
+    state = (runtime_state or _default_runtime_state).queue_state()
     if include_gpu:
         state["gpu"] = gpu_memory_state()
     return state
 
 
-def should_queue_generation() -> bool:
-    state = generation_queue_state()
+def should_queue_generation(runtime_state: GenerationRuntimeState | None = None) -> bool:
+    state = generation_queue_state(runtime_state=runtime_state)
     gpu = state.get("gpu") or {}
     return bool(state.get("busy") or gpu.get("low_memory"))
 
 
-@contextmanager
-def generation_slot():
-    global _waiting_count, _active_count
-    with _queue_lock:
-        queue_position = _active_count + _waiting_count
-        _waiting_count += 1
-    _generation_lock.acquire()
-    with _queue_lock:
-        _waiting_count = max(0, _waiting_count - 1)
-        _active_count += 1
-    try:
-        yield {"queue_position": queue_position}
-    finally:
-        with _queue_lock:
-            _active_count = max(0, _active_count - 1)
-        _generation_lock.release()
+def generation_slot(runtime_state: GenerationRuntimeState | None = None):
+    return (runtime_state or _default_runtime_state).slot()
 
 
 def _manual_start_message(status: dict) -> str:
