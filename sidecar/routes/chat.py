@@ -93,6 +93,11 @@ from services.chat_intents import (
     is_folder_summary_to_docx_intent as _is_folder_summary_to_docx_intent,
     is_open_folder_intent as _is_open_folder_intent,
 )
+from services.chat_asset_prompts import (
+    contains_any as _contains_any,
+    deterministic_asset_prompt as _deterministic_asset_prompt,
+    document_requirement_text as _document_requirement_text,
+)
 from services.chat_paths import (
     DOCX_PATH_PATTERN,
     DOCUMENT_EXTENSIONS,
@@ -745,101 +750,6 @@ def _read_document_attachments(paths: list[str], max_chars: int = 16000) -> list
             continue
         sections.append(f"[{result.get('name') or path}]\n{result.get('content', '')}")
     return sections
-
-
-async def _build_asset_prompt_from_documents(
-    user_request: str,
-    document_sections: list[str],
-    client,
-    model_name: str,
-    target: str,
-) -> str:
-    raw_context = "\n\n---\n\n".join(document_sections).strip()
-    fallback = f"{user_request}\n\n{raw_context}".strip()
-    system_hint = (
-        "你是一个本地工具调度器的提示词生成器。"
-        "根据用户要求和附件文档，输出可以直接交给生成工具的简洁中文提示词。"
-        "只输出提示词本身，不要解释，不要给方案，不要问用户。"
-        "如果文档里有主体、风格、颜色、材质、尺寸、用途等要求，全部合并进去。"
-    )
-    if target == "image":
-        system_hint += "目标工具是文生图。提示词应描述画面主体、风格、颜色、构图、背景和质量要求。"
-    else:
-        system_hint += "目标工具是文生3D模型。提示词应描述单个清晰主体、形体、材质、颜色、风格和可建模细节。"
-
-    try:
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_hint},
-                {
-                    "role": "user",
-                    "content": f"用户要求：{user_request}\n\n附件文档：\n{raw_context}",
-                },
-            ],
-        )
-        prompt = (response.choices[0].message.content or "").strip()
-        return prompt or fallback
-    except Exception:
-        return fallback
-
-
-def _document_requirement_text(document_sections: list[str]) -> str:
-    chunks: list[str] = []
-    for section in document_sections:
-        _, _, body = section.partition("\n")
-        chunks.append(body or section)
-    text = "\n".join(chunks)
-    text = re.sub(r"(?i)\b(requirements?|prompt)\s*[:：]", "", text)
-    text = re.sub(r"要求\s*[:：]", "", text)
-    text = re.sub(r"\s+", " ", text).strip(" \n\r\t,，。；;")
-    return text
-
-
-def _contains_any(text: str, words: list[str]) -> bool:
-    lowered = text.lower()
-    return any(word.lower() in lowered for word in words)
-
-
-def _deterministic_asset_prompt(requirement_text: str, target: str) -> str:
-    text = requirement_text.strip()
-    color = ""
-    if _contains_any(text, ["白色", "white"]):
-        color = "white"
-    elif _contains_any(text, ["黑色", "black"]):
-        color = "black"
-    elif _contains_any(text, ["棕色", "brown"]):
-        color = "brown"
-
-    cute = _contains_any(text, ["可爱", "cute", "adorable"])
-    subject = ""
-    if _contains_any(text, ["狗", "小狗", "犬", "dog", "puppy"]):
-        subject = "puppy dog" if cute else "dog"
-    elif _contains_any(text, ["猫", "小猫", "cat", "kitten"]):
-        subject = "kitten cat" if cute else "cat"
-    elif _contains_any(text, ["兔", "rabbit", "bunny"]):
-        subject = "bunny rabbit" if cute else "rabbit"
-
-    if subject:
-        parts = ["a single"]
-        if cute:
-            parts.append("cute adorable")
-        if color:
-            parts.append(color)
-        parts.append(subject)
-        core = " ".join(parts)
-    else:
-        core = text
-
-    if target == "3d":
-        return (
-            f"{core}, stylized 3D asset, full body, clear silhouette, clean topology-friendly shape, "
-            "simple neutral background, no humans, no text, no watermark"
-        )
-    return (
-        f"{core}, full body, centered composition, soft fluffy fur, clean simple background, "
-        "high quality cute illustration, no humans, no people, no portrait, no text, no watermark"
-    )
 
 
 async def _build_asset_prompt_from_documents(
