@@ -15,6 +15,8 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
 - Python sidecar: `sidecar/`
   - Chat routes and orchestration: `sidecar/routes/chat.py`
   - Chat response formatting helpers: `sidecar/services/chat_response_formatters.py`
+  - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
+  - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
   - Direct file intent helpers and direct file response formatting: `sidecar/routes/direct_files.py`
   - 3D/generation HTTP routes: `sidecar/routes/asset_3d.py`
@@ -96,6 +98,8 @@ Likely disposable tables:
 - Use structured parsing and typed models where possible.
 - Do not expose or log plaintext API keys.
 - Keep pure chat response formatting out of `sidecar/routes/chat.py`; add formatters to `sidecar/services/chat_response_formatters.py` and alias imports in chat when preserving old call names reduces risk.
+- Keep confirmation parsing and simple confirmed command/project-check dispatch out of `sidecar/routes/chat.py`; those helpers live in `sidecar/services/chat_confirmations.py`. Leave flows that need the chat LLM client in chat until they have a cleaner orchestration boundary.
+- Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
 - Keep DSML/textual tool parsing out of `sidecar/routes/chat.py`; parsing helpers live in `sidecar/services/textual_tool_parser.py`, while actual tool execution can remain in chat until it has stronger regression coverage.
 - SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
 - Run `npm run check` after frontend changes and `cargo check --manifest-path src-tauri/Cargo.toml` after Tauri command changes.

@@ -37,6 +37,7 @@ from routes.direct_files import (
     run_direct_text_file_edit as _run_direct_text_file_edit,
 )
 from services.chat_response_formatters import (
+    format_3d_response as _format_3d_response,
     format_command_tool_response as _format_command_tool_response,
     format_delete_tool_response as _format_delete_tool_response,
     format_image_response as _format_image_response,
@@ -44,6 +45,17 @@ from services.chat_response_formatters import (
     format_text_edit_response as _format_text_edit_response,
     format_video_response as _format_video_response,
     format_write_many_files_response as _format_write_many_files_response,
+)
+from services.chat_confirmations import (
+    delete_then_create_prompt as _delete_then_create_prompt,
+    extract_confirmed_command as _extract_confirmed_command,
+    extract_confirmed_delete as _extract_confirmed_delete,
+    extract_confirmed_project_check as _extract_confirmed_project_check,
+    extract_delete_continuation as _extract_delete_continuation,
+    is_delete_request_text as _is_delete_request_text,
+    run_confirmed_command_request as _run_confirmed_command_request,
+    run_confirmed_project_check_request as _run_confirmed_project_check_request,
+    with_delete_continuation as _with_delete_continuation,
 )
 from services.generation_runtime import (
     COMFY_MANUAL_START_STATUS,
@@ -64,18 +76,18 @@ from services.textual_tool_parser import (
     parse_textual_json as _parse_textual_json,
     parse_textual_optional_int as _parse_textual_optional_int,
 )
+from services.chat_tool_results import (
+    any_requires_manual_comfy_start as _any_requires_manual_comfy_start,
+    best_tool_result as _best_tool_result,
+    first_3d_result as _first_3d_result,
+    first_tool_result as _first_tool_result,
+    requires_manual_comfy_start as _requires_manual_comfy_start,
+    result_output_paths as _result_output_paths,
+)
 
 router = APIRouter()
 
 MAX_TOOL_CALL_ROUNDS = 6
-THREE_D_TOOL_NAMES = {
-    "generate_3d_from_text",
-    "generate_3d_from_image",
-    "generate_3d_fusion",
-    "generate_3d_from_generated_multiview",
-    "modify_previous_3d",
-}
-
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 DOCUMENT_EXTENSIONS = {
     ".txt",
@@ -128,28 +140,6 @@ GENERATED_TEXT_EXTENSIONS = {
     ".ini",
     ".log",
 }
-
-COMMAND_CONFIRM_PATTERN = re.compile(
-    r"(?:确认执行命令|confirm\s+(?:running|execute|run)\s+command)\s*[:：]\s*`([^`]+)`"
-    r"(?:\s*[，,]\s*(?:工作目录|cwd|working\s+directory)\s*[:：]\s*`([^`]+)`)?",
-    re.IGNORECASE,
-)
-
-PROJECT_CHECK_CONFIRM_PATTERN = re.compile(
-    r"(?:确认项目检查|confirm\s+project\s+check)\s*[:：]\s*`([^`]+)`"
-    r"(?:\s*[，,]\s*(?:类型|type|check_type)\s*[:：]\s*`?([^`\s，,]+)`?)?",
-    re.IGNORECASE,
-)
-
-DELETE_CONFIRM_PATTERN = re.compile(
-    r"(?:确认删除|confirm\s+deletion\s+of)\s*`([^`]+)`",
-    re.IGNORECASE,
-)
-
-DELETE_CONTINUATION_PATTERN = re.compile(
-    r"(?:继续任务|后续任务|continue\s+task|then)\s*[:：]\s*([\s\S]+)",
-    re.IGNORECASE,
-)
 
 DOCX_PATH_PATTERN = re.compile(
     r"`([^`]+\.docx)`|([A-Za-z]:[\\/][^\s`\"'，。；;]+\.docx)",
@@ -1194,42 +1184,6 @@ def _format_attachment_asset_start(tool_name: str) -> str:
     return "我已读取附件要求，正在按文档内容生成图片。\n\n"
 
 
-def _first_3d_result(tool_results: list[dict]) -> dict | None:
-    for item in tool_results:
-        if item.get("tool") in THREE_D_TOOL_NAMES:
-            return item
-    return None
-
-
-def _first_tool_result(tool_results: list[dict], tool_name: str) -> dict | None:
-    for item in tool_results:
-        if item.get("tool") == tool_name:
-            return item
-    return None
-
-
-def _requires_manual_comfy_start(result: dict | None) -> bool:
-    if not isinstance(result, dict):
-        return False
-    payload = result.get("result") if "result" in result else result
-    return isinstance(payload, dict) and bool(payload.get("manual_start_required"))
-
-
-def _any_requires_manual_comfy_start(items: list[dict]) -> bool:
-    return any(_requires_manual_comfy_start(item) for item in items)
-
-
-def _best_tool_result(tool_results: list[dict], tool_name: str) -> dict | None:
-    matches = [item for item in tool_results if item.get("tool") == tool_name]
-    if not matches:
-        return None
-    for item in reversed(matches):
-        result = item.get("result")
-        if isinstance(result, dict) and result.get("ok"):
-            return item
-    return matches[-1]
-
-
 def _run_textual_tool_calls(content: str) -> list[dict]:
     results = []
     for tool_name, args in _extract_textual_tool_calls(content):
@@ -1351,123 +1305,6 @@ async def _answer_from_textual_tool_results(client, model_name: str, messages: l
     return (response.choices[0].message.content or "").strip() or _format_textual_tool_direct_response(tool_results)
 
 
-def _extract_confirmed_command(content: str) -> tuple[str, str] | None:
-    match = COMMAND_CONFIRM_PATTERN.search(content or "")
-    if not match:
-        return None
-    command = (match.group(1) or "").strip()
-    cwd = (match.group(2) or "").strip()
-    if not command:
-        return None
-    return command, cwd
-
-
-def _run_confirmed_command_request(req: ChatRequest) -> dict | None:
-    parsed = _extract_confirmed_command(req.content)
-    if not parsed:
-        return None
-    command, cwd = parsed
-    return memory_mgr.handle_run_command(
-        command,
-        cwd or req.project_path or "",
-        "powershell",
-        180,
-        True,
-        req.permission_mode,
-    )
-
-
-def _extract_confirmed_project_check(content: str) -> tuple[str, str] | None:
-    match = PROJECT_CHECK_CONFIRM_PATTERN.search(content or "")
-    if not match:
-        return None
-    path = (match.group(1) or "").strip()
-    check_type = (match.group(2) or "auto").strip() or "auto"
-    if not path:
-        return None
-    return path, check_type
-
-
-def _run_confirmed_project_check_request(req: ChatRequest) -> dict | None:
-    parsed = _extract_confirmed_project_check(req.content)
-    if not parsed:
-        return None
-    path, check_type = parsed
-    return memory_mgr.handle_run_project_check(
-        path,
-        check_type,
-        180,
-        True,
-        req.permission_mode,
-    )
-
-
-def _extract_delete_continuation(content: str) -> str:
-    text = content or ""
-    explicit = DELETE_CONTINUATION_PATTERN.search(text)
-    if explicit:
-        return explicit.group(1).strip()
-    patterns = [
-        r"(再写[\s\S]+)",
-        r"(重新写[\s\S]+)",
-        r"(重写[\s\S]+)",
-        r"(然后写[\s\S]+)",
-        r"(并写[\s\S]+)",
-        r"(再创建[\s\S]+)",
-        r"(重新创建[\s\S]+)",
-        r"(然后创建[\s\S]+)",
-        r"(并创建[\s\S]+)",
-        r"(再做[\s\S]+)",
-        r"(重新做[\s\S]+)",
-        r"(然后做[\s\S]+)",
-        r"(并做[\s\S]+)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-    return ""
-
-
-def _extract_confirmed_delete(content: str) -> tuple[str, str] | None:
-    match = DELETE_CONFIRM_PATTERN.search(content or "")
-    if not match:
-        return None
-    target = (match.group(1) or "").strip()
-    if not target:
-        return None
-    return target, _extract_delete_continuation(content)
-
-
-def _with_delete_continuation(message: str, continuation: str) -> str:
-    continuation = (continuation or "").strip()
-    if not continuation or "[CONFIRM_DELETE_REQUIRED]" not in (message or ""):
-        return message
-    return message.replace(
-        "[/CONFIRM_DELETE_REQUIRED]",
-        f"后续任务: `{continuation}`\n[/CONFIRM_DELETE_REQUIRED]",
-    )
-
-
-def _delete_then_create_prompt(target_path: str, continuation: str) -> str:
-    target = Path(target_path)
-    ext = target.suffix.lower()
-    format_hint = ""
-    if ext in {".html", ".htm"}:
-        format_hint = "请重新创建同路径 HTML 文件，生成完整可直接打开运行的单文件 HTML，包含 CSS 和 JS。"
-    elif ext == ".py":
-        format_hint = "请重新创建同路径 Python 文件，生成完整可运行代码。"
-    elif ext in {".css", ".js", ".ts", ".tsx", ".jsx"}:
-        format_hint = f"请重新创建同路径 {ext} 代码文件。"
-    else:
-        format_hint = "请按被删除文件的类型重新创建同路径文本/代码文件。"
-    return (
-        f"删除已完成。现在执行后续任务：{continuation}\n\n"
-        f"目标文件名：{target.name}\n目标文件夹：{target.parent}\n目标路径：{target_path}\n"
-        f"{format_hint}\n不要创建 .bak 备份。"
-    )
-
-
 async def _run_confirmed_delete_request(
     req: ChatRequest,
     client,
@@ -1495,77 +1332,8 @@ async def _run_confirmed_delete_request(
             model_name,
             force=True,
             prompt_override=create_prompt,
-        )
+    )
     return delete_result, create_result
-
-
-def _is_delete_request_text(content: str) -> bool:
-    text = (content or "").lower()
-    return any(word in text for word in ["删除", "删掉", "移除", "清理", "确认删除", "delete", "remove"])
-
-
-def _format_3d_response(tool_name: str, result: dict) -> str:
-    mode_label = {
-        "generate_3d_from_text": "\u6587\u751f 3D",
-        "generate_3d_from_image": "\u56fe\u7247\u8f6c 3D",
-        "generate_3d_fusion": "\u53cc\u56fe\u878d\u5408 3D",
-        "modify_previous_3d": "\u4fee\u6539\u540e 3D",
-    }.get(tool_name, "3D \u751f\u6210")
-
-    status = result.get("status")
-    task_id = result.get("task_id") or result.get("taskId")
-    if status == "queued" and task_id:
-        return "\n".join(
-            [
-                f"{mode_label} 任务已加入队列。",
-                "",
-                f"任务 ID: `{task_id}`",
-                "",
-                "你可以继续发送新的聊天或生成任务；完成后会出现在生成历史里。",
-            ]
-        )
-    model_path = result.get("model_path") or result.get("modelPath")
-    image_2d = result.get("image_2d") or result.get("image2D")
-    image_normal = result.get("image_normal") or result.get("imageNormal")
-    image_uv = result.get("image_uv") or result.get("imageUV")
-
-    if status == "success" and model_path:
-        lines = [f"{mode_label} 已完成。", "", f"3D 模型: `{model_path}`"]
-        if image_2d:
-            lines.append(f"预览图: `{image_2d}`")
-        if image_normal:
-            lines.append(f"法线图: `{image_normal}`")
-        if image_uv:
-            lines.append(f"UV 贴图: `{image_uv}`")
-        source1 = result.get("image1_path") or result.get("image1Path")
-        source2 = result.get("image2_path") or result.get("image2Path")
-        if source1:
-            lines.append(f"源图1: `{source1}`")
-        if source2:
-            lines.append(f"源图2: `{source2}`")
-        front = result.get("front_path") or result.get("frontPath")
-        left = result.get("left_path") or result.get("leftPath")
-        back = result.get("back_path") or result.get("backPath")
-        if front and left and back:
-            lines.extend([f"正面: `{front}`", f"左侧: `{left}`", f"背面: `{back}`"])
-        return "\n".join(lines)
-
-    message = result.get("message") or "\u672a\u8fd4\u56de 3D \u6a21\u578b\u6587\u4ef6"
-    lines = [f"{mode_label} \u5931\u8d25\u3002", "", f"\u539f\u56e0: {message}"]
-    front = result.get("front_path") or result.get("frontPath")
-    left = result.get("left_path") or result.get("leftPath")
-    back = result.get("back_path") or result.get("backPath")
-    if front and left and back:
-        lines.extend(["", "已完成的中间产物："])
-        lines.extend([f"正面: `{front}`", f"左侧: `{left}`", f"背面: `{back}`"])
-    if "mat1 and mat2 shapes cannot be multiplied" in message:
-        lines.extend(
-            [
-                "",
-                "\u8fd9\u4e2a\u9519\u8bef\u901a\u5e38\u8868\u793a\u5f53\u524d ComfyUI \u5de5\u4f5c\u6d41\u91cc\u7684 Flux2 \u6a21\u578b\u548c\u6587\u672c\u7f16\u7801\u5668\u7ef4\u5ea6\u4e0d\u5339\u914d\u3002\u8bf7\u68c0\u67e5\u5de5\u4f5c\u6d41\u4e2d UNet/GGUF \u6a21\u578b\u4e0e Qwen/CLIP \u6587\u672c\u7f16\u7801\u5668\u662f\u5426\u6765\u81ea\u540c\u4e00\u5957 Flux2 \u914d\u7f6e\u3002",
-            ]
-        )
-    return "\n".join(lines)
 
 
 def _is_modify_previous_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:
@@ -2033,46 +1801,6 @@ async def _build_router_context(req: ChatRequest, capabilities: dict | None = No
         "latest_multiview": latest_multiview or {},
         "has_latest_multiview": bool(latest_multiview),
     }
-
-
-def _result_output_paths(routed_result: dict | str | None) -> list[str]:
-    if not isinstance(routed_result, dict):
-        return []
-    result = routed_result.get("result") if "result" in routed_result else routed_result
-    if not isinstance(result, dict):
-        return []
-    keys = [
-        "image_path",
-        "improved_image_path",
-        "model_path",
-        "image_2d",
-        "image_normal",
-        "image_uv",
-        "front_path",
-        "left_path",
-        "back_path",
-        "path",
-        "output_path",
-    ]
-    paths = []
-    for key in keys:
-        value = result.get(key)
-        if isinstance(value, str) and value:
-            paths.append(value)
-    files = result.get("files")
-    if isinstance(files, list):
-        for item in files:
-            if isinstance(item, dict) and isinstance(item.get("path"), str):
-                paths.append(item["path"])
-    deduped = []
-    seen = set()
-    for path in paths:
-        key = path.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(path)
-    return deduped
 
 
 async def _agent_trace_block(

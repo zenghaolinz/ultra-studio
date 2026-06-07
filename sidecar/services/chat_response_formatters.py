@@ -72,6 +72,70 @@ def format_video_response(result: dict) -> str:
     return f"视频任务失败。\n\n原因: {message}"
 
 
+def format_3d_response(tool_name: str, result: dict) -> str:
+    mode_label = {
+        "generate_3d_from_text": "文生 3D",
+        "generate_3d_from_image": "图片转 3D",
+        "generate_3d_fusion": "双图融合 3D",
+        "modify_previous_3d": "修改后 3D",
+    }.get(tool_name, "3D 生成")
+
+    status = result.get("status")
+    task_id = result.get("task_id") or result.get("taskId")
+    if status == "queued" and task_id:
+        return "\n".join(
+            [
+                f"{mode_label} 任务已加入队列。",
+                "",
+                f"任务 ID: `{task_id}`",
+                "",
+                "你可以继续发送新的聊天或生成任务；完成后会出现在生成历史里。",
+            ]
+        )
+    model_path = result.get("model_path") or result.get("modelPath")
+    image_2d = result.get("image_2d") or result.get("image2D")
+    image_normal = result.get("image_normal") or result.get("imageNormal")
+    image_uv = result.get("image_uv") or result.get("imageUV")
+
+    if status == "success" and model_path:
+        lines = [f"{mode_label} 已完成。", "", f"3D 模型: `{model_path}`"]
+        if image_2d:
+            lines.append(f"预览图: `{image_2d}`")
+        if image_normal:
+            lines.append(f"法线图: `{image_normal}`")
+        if image_uv:
+            lines.append(f"UV 贴图: `{image_uv}`")
+        source1 = result.get("image1_path") or result.get("image1Path")
+        source2 = result.get("image2_path") or result.get("image2Path")
+        if source1:
+            lines.append(f"源图1: `{source1}`")
+        if source2:
+            lines.append(f"源图2: `{source2}`")
+        front = result.get("front_path") or result.get("frontPath")
+        left = result.get("left_path") or result.get("leftPath")
+        back = result.get("back_path") or result.get("backPath")
+        if front and left and back:
+            lines.extend([f"正面: `{front}`", f"左侧: `{left}`", f"背面: `{back}`"])
+        return "\n".join(lines)
+
+    message = result.get("message") or "未返回 3D 模型文件"
+    lines = [f"{mode_label} 失败。", "", f"原因: {message}"]
+    front = result.get("front_path") or result.get("frontPath")
+    left = result.get("left_path") or result.get("leftPath")
+    back = result.get("back_path") or result.get("backPath")
+    if front and left and back:
+        lines.extend(["", "已完成的中间产物："])
+        lines.extend([f"正面: `{front}`", f"左侧: `{left}`", f"背面: `{back}`"])
+    if "mat1 and mat2 shapes cannot be multiplied" in message:
+        lines.extend(
+            [
+                "",
+                "这个错误通常表示当前 ComfyUI 工作流里的 Flux2 模型和文本编码器维度不匹配。请检查工作流中 UNet/GGUF 模型与 Qwen/CLIP 文本编码器是否来自同一套 Flux2 配置。",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def format_delete_tool_response(result: dict) -> str:
     if result.get("needs_confirmation") and result.get("message"):
         return result["message"]

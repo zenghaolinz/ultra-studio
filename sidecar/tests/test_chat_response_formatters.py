@@ -7,6 +7,7 @@ if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
 from services.chat_response_formatters import (
+    format_3d_response,
     format_command_tool_response,
     format_delete_tool_response,
     format_image_response,
@@ -49,6 +50,15 @@ class ChatResponseFormatterTests(unittest.TestCase):
 
         self.assertIn("视频任务失败。", response)
         self.assertIn("原因: ComfyUI offline", response)
+
+    def test_format_3d_success_response_lists_model_and_preview(self) -> None:
+        response = format_3d_response(
+            "generate_3d_from_text",
+            {"status": "success", "modelPath": "model.glb", "image2D": "preview.png"},
+        )
+
+        self.assertIn("model.glb", response)
+        self.assertIn("preview.png", response)
 
     def test_format_command_response_includes_output(self) -> None:
         response = format_command_tool_response(
