@@ -1,4 +1,3 @@
-import uuid
 import datetime
 import traceback
 import json
@@ -77,12 +76,19 @@ from services.textual_tool_parser import (
     parse_textual_optional_int as _parse_textual_optional_int,
 )
 from services.chat_tool_results import (
+    THREE_D_TOOL_NAMES,
     any_requires_manual_comfy_start as _any_requires_manual_comfy_start,
     best_tool_result as _best_tool_result,
     first_3d_result as _first_3d_result,
     first_tool_result as _first_tool_result,
     requires_manual_comfy_start as _requires_manual_comfy_start,
     result_output_paths as _result_output_paths,
+)
+from services.chat_messages import (
+    remove_internal_source_message as _remove_internal_source_message,
+    save_assistant_message as _save_assistant_message,
+    save_user_message as _save_user_message,
+    save_visible_user_message as _save_visible_user_message,
 )
 
 router = APIRouter()
@@ -2122,51 +2128,9 @@ async def _inject_router_context(conversation_id: str, routed_result: dict | str
         await _inject_3d_context(conversation_id, result)
 
 
-async def _save_user_message(db, conversation_id: str, content: str):
-    user_id = uuid.uuid4().hex
-    now = datetime.datetime.utcnow().isoformat()
-    await db.execute(
-        "INSERT INTO stm_entries (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        (user_id, conversation_id, "user", content, now),
-    )
-    await db.commit()
-    return user_id
-
-
-async def _save_visible_user_message(db, req: ChatRequest):
-    if req.hidden_user_message:
-        return None
-    return await _save_user_message(db, req.conversation_id, req.content)
-
-
-async def _remove_internal_source_message(db, req: ChatRequest):
-    if not req.remove_message_id:
-        return
-    await db.execute(
-        "DELETE FROM stm_entries WHERE id = ? AND conversation_id = ? AND role = 'assistant'",
-        (req.remove_message_id, req.conversation_id),
-    )
-    await db.commit()
-
-
 def _schedule_title_generation(db, req: ChatRequest):
     if not req.hidden_user_message:
         asyncio.create_task(_maybe_generate_title(db, req.conversation_id, req.content))
-
-
-async def _save_assistant_message(db, conversation_id: str, content: str):
-    assistant_id = uuid.uuid4().hex
-    assistant_now = datetime.datetime.utcnow().isoformat()
-    await db.execute(
-        "INSERT INTO stm_entries (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        (assistant_id, conversation_id, "assistant", content, assistant_now),
-    )
-    await db.execute(
-        "UPDATE conversations SET updated_at = ? WHERE id = ?",
-        (assistant_now, conversation_id),
-    )
-    await db.commit()
-    return assistant_id, assistant_now
 
 
 async def _maybe_generate_title(db, conversation_id: str, user_content: str, model_id: str | None = None):
