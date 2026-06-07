@@ -20,6 +20,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat document-to-asset prompt helpers: `sidecar/services/chat_asset_prompts.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
+  - Chat project context helpers: `sidecar/services/chat_projects.py`
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
@@ -108,6 +109,7 @@ Likely disposable tables:
 - Keep deterministic document-to-asset prompt extraction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_asset_prompts.py` for requirement text cleanup and deterministic image/3D fallback prompts.
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
+- Keep project path lookup and project-context injection text out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
 - Keep router constants, safe JSON parsing, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`. Router context gathering and action execution can stay in chat until those dependencies are split further.
 - Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
 - Keep DSML/textual tool parsing out of `sidecar/routes/chat.py`; parsing helpers live in `sidecar/services/textual_tool_parser.py`, while actual tool execution can remain in chat until it has stronger regression coverage.
