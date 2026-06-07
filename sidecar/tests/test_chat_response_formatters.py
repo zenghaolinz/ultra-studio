@@ -8,12 +8,14 @@ if str(SIDECAR_DIR) not in sys.path:
 
 from services.chat_response_formatters import (
     format_3d_response,
+    format_attachment_asset_start,
     format_command_tool_response,
     format_delete_tool_response,
     format_folder_summary_response,
     format_image_response,
     format_project_check_response,
     format_text_edit_response,
+    format_textual_tool_direct_response,
     format_video_response,
     format_write_many_files_response,
 )
@@ -120,6 +122,15 @@ class ChatResponseFormatterTests(unittest.TestCase):
 
         needs_path = format_folder_summary_response({"needs_path": True})
         self.assertIn("[PATH_RESOLUTION_REQUIRED]", needs_path)
+
+    def test_format_attachment_asset_start_and_textual_direct_response(self) -> None:
+        self.assertIn("3D", format_attachment_asset_start("generate_3d_from_text"))
+        self.assertIn("图片", format_attachment_asset_start("generate_image"))
+
+        response = format_textual_tool_direct_response(
+            [{"tool": "web_search", "result": {"results": [{"title": "a"}, {"title": "b"}]}}]
+        )
+        self.assertIn("2", response)
 
 
 if __name__ == "__main__":

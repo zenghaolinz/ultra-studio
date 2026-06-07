@@ -35,12 +35,14 @@ from routes.direct_files import (
 )
 from services.chat_response_formatters import (
     format_3d_response as _format_3d_response,
+    format_attachment_asset_start as _format_attachment_asset_start,
     format_command_tool_response as _format_command_tool_response,
     format_delete_tool_response as _format_delete_tool_response,
     format_folder_summary_response as _format_folder_summary_response,
     format_image_response as _format_image_response,
     format_project_check_response as _format_project_check_response,
     format_text_edit_response as _format_text_edit_response,
+    format_textual_tool_direct_response as _format_textual_tool_direct_response,
     format_video_response as _format_video_response,
     format_write_many_files_response as _format_write_many_files_response,
 )
@@ -868,12 +870,6 @@ async def _run_project_document_asset_request(req: ChatRequest, client, model_na
     return {"tool": "generate_image", "result": result}
 
 
-def _format_attachment_asset_start(tool_name: str) -> str:
-    if tool_name == "generate_3d_from_text":
-        return "我已读取附件要求，正在按文档内容生成 3D 模型。\n\n"
-    return "我已读取附件要求，正在按文档内容生成图片。\n\n"
-
-
 def _run_textual_tool_calls(content: str) -> list[dict]:
     results = []
     for tool_name, args in _extract_textual_tool_calls(content):
@@ -944,32 +940,6 @@ def _run_textual_tool_call(content: str) -> tuple[str, dict] | None:
         if item.get("tool") == "edit_text_file":
             return item["tool"], item["result"]
     return None
-
-
-def _format_textual_tool_direct_response(tool_results: list[dict]) -> str:
-    edit_result = _best_tool_result(tool_results, "edit_text_file")
-    write_many_result = _best_tool_result(tool_results, "write_many_files")
-    if edit_result:
-        return _format_text_edit_response(edit_result["result"])
-    if write_many_result:
-        return _format_write_many_files_response(write_many_result["result"])
-    lines = []
-    for item in tool_results:
-        tool = item.get("tool")
-        result = item.get("result") or {}
-        if tool == "web_fetch":
-            title = result.get("title") or result.get("url") or "网页"
-            lines.append(f"已读取网页：{title}")
-        elif tool == "web_search":
-            count = len(result.get("results") or [])
-            lines.append(f"已完成网页搜索，返回 {count} 条结果。")
-        elif tool == "read_document":
-            lines.append(f"已读取文档：`{result.get('path') or ''}`")
-        elif tool == "list_directory":
-            lines.append(f"已读取目录：`{result.get('path') or ''}`")
-        elif tool == "search_files":
-            lines.append(f"已搜索文件：`{result.get('path') or ''}`")
-    return "\n".join(line for line in lines if line).strip() or "工具调用已执行。"
 
 
 async def _answer_from_textual_tool_results(client, model_name: str, messages: list, user_content: str, tool_results: list[dict]) -> str:

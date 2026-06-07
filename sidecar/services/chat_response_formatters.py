@@ -1,4 +1,11 @@
 from services.chat_paths import format_path_resolution_card
+from services.chat_tool_results import best_tool_result
+
+
+def format_attachment_asset_start(tool_name: str) -> str:
+    if tool_name == "generate_3d_from_text":
+        return "我已读取附件要求，正在按文档内容生成 3D 模型。\n\n"
+    return "我已读取附件要求，正在按文档内容生成图片。\n\n"
 
 
 def format_image_response(tool_name: str, result: dict) -> str:
@@ -205,6 +212,32 @@ def format_write_many_files_response(result: dict) -> str:
         if isinstance(item, dict):
             lines.append(f"- 错误：{item.get('path', '')} {item.get('error', '')}".strip())
     return "\n".join(lines)
+
+
+def format_textual_tool_direct_response(tool_results: list[dict]) -> str:
+    edit_result = best_tool_result(tool_results, "edit_text_file")
+    write_many_result = best_tool_result(tool_results, "write_many_files")
+    if edit_result:
+        return format_text_edit_response(edit_result["result"])
+    if write_many_result:
+        return format_write_many_files_response(write_many_result["result"])
+    lines = []
+    for item in tool_results:
+        tool = item.get("tool")
+        result = item.get("result") or {}
+        if tool == "web_fetch":
+            title = result.get("title") or result.get("url") or "网页"
+            lines.append(f"已读取网页：{title}")
+        elif tool == "web_search":
+            count = len(result.get("results") or [])
+            lines.append(f"已完成网页搜索，返回 {count} 条结果。")
+        elif tool == "read_document":
+            lines.append(f"已读取文档：`{result.get('path') or ''}`")
+        elif tool == "list_directory":
+            lines.append(f"已读取目录：`{result.get('path') or ''}`")
+        elif tool == "search_files":
+            lines.append(f"已搜索文件：`{result.get('path') or ''}`")
+    return "\n".join(line for line in lines if line).strip() or "工具调用已执行。"
 
 
 def format_project_check_response(result: dict) -> str:
