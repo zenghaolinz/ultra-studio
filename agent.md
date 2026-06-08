@@ -22,6 +22,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat generation context injection/history helpers: `sidecar/services/chat_generation_context.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
+  - Chat provider client lookup/creation: `sidecar/services/chat_provider_client.py`
   - Chat project file candidate scanners: `sidecar/services/chat_project_files.py`
   - Chat project context helpers: `sidecar/services/chat_projects.py`
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
@@ -116,6 +117,7 @@ Likely disposable tables:
 - Keep generation context injection and latest generated image/multiview lookup out of `sidecar/routes/chat.py`; use `sidecar/services/chat_generation_context.py` for STM context strings and history scanning.
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
+- Keep chat provider config lookup and `AsyncOpenAI` client construction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_provider_client.py`.
 - Keep project document/image/file candidate scanning out of `sidecar/routes/chat.py`; use `sidecar/services/chat_project_files.py` for fuzzy matching files under the current project root.
 - Keep project path lookup, project-context injection text, and open-folder request handling out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
 - Keep router constants, safe JSON parsing, model-capability inference, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`. Router context gathering and action execution can stay in chat until those dependencies are split further.

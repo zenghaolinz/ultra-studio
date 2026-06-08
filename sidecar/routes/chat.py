@@ -7,7 +7,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from openai import AsyncOpenAI
 from db.sqlite import get_db
 from memory import manager as memory_mgr
 from memory import stm as memory_stm
@@ -80,6 +79,7 @@ from services.chat_direct_media import (
     run_direct_image_request as _run_direct_image_request,
     run_previous_3d_modification as _run_previous_3d_modification,
 )
+from services.chat_provider_client import get_provider_client as _get_provider_client
 from services.chat_tool_results import (
     THREE_D_TOOL_NAMES,
     any_requires_manual_comfy_start as _any_requires_manual_comfy_start,
@@ -438,31 +438,6 @@ async def _run_confirmed_delete_request(
             prompt_override=create_prompt,
     )
     return delete_result, create_result
-
-
-async def _get_provider_client(db, model_id: str | None = None):
-    config_row = []
-    if model_id:
-        config_row = await db.execute_fetchall(
-            "SELECT provider, model_name, api_key, base_url FROM model_configs WHERE id = ? LIMIT 1",
-            (model_id,),
-        )
-    if not config_row:
-        config_row = await db.execute_fetchall(
-            "SELECT provider, model_name, api_key, base_url FROM model_configs WHERE is_default = 1 LIMIT 1"
-        )
-    if not config_row:
-        config_row = await db.execute_fetchall(
-            "SELECT provider, model_name, api_key, base_url FROM model_configs ORDER BY created_at DESC LIMIT 1"
-        )
-    if not config_row:
-        return None, None
-    provider_config = config_row[0]
-    client = AsyncOpenAI(
-        api_key=provider_config[2] or "sk-placeholder",
-        base_url=provider_config[3],
-    )
-    return client, provider_config
 
 
 async def _build_router_context(req: ChatRequest, capabilities: dict | None = None) -> dict:
