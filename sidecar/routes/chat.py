@@ -138,6 +138,10 @@ from services.chat_router_context import (
     build_router_context as _build_router_context,
     direct_agent_trace_block as _direct_agent_trace_block,
 )
+from services.chat_router_results import (
+    format_router_result as _format_router_result,
+    inject_router_context as _inject_router_context,
+)
 from services.chat_projects import (
     project_path_for_request as _project_path_for_request,
     run_open_folder_request as _run_open_folder_request,
@@ -670,42 +674,6 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
         return await _run_project_document_read(req, client, model_name)
 
     return None
-
-
-def _format_router_result(routed_result: dict | str | None) -> str | None:
-    if routed_result is None:
-        return None
-    if isinstance(routed_result, str):
-        return routed_result
-    if "tool" in routed_result:
-        tool = routed_result["tool"]
-        result = routed_result.get("result") or {}
-        if tool in {"generate_image", "edit_image", "generate_multiview_images_from_image"}:
-            return _format_image_response(tool, result)
-        if tool == "generate_video":
-            return _format_video_response(result)
-        if tool in THREE_D_TOOL_NAMES:
-            return _format_3d_response(tool, result)
-        if tool == "implementation_choice":
-            return result.get("message") or _format_implementation_choice_card("")
-        if tool == "create_text_file":
-            return _format_text_file_create_response(result or {})
-    if routed_result.get("path") and routed_result.get("ok") is not None:
-        if str(routed_result.get("path", "")).lower().endswith(".docx"):
-            return _format_docx_create_response(routed_result)
-    if routed_result.get("document_count") is not None or routed_result.get("needs_path"):
-        return _format_folder_summary_response(routed_result)
-    return None
-
-
-async def _inject_router_context(conversation_id: str, routed_result: dict | str | None):
-    if not isinstance(routed_result, dict) or "tool" not in routed_result:
-        return
-    result = routed_result.get("result") or {}
-    if routed_result["tool"] in {"generate_image", "edit_image", "generate_multiview_images_from_image"}:
-        await _inject_image_context(conversation_id, result)
-    elif routed_result["tool"] in THREE_D_TOOL_NAMES:
-        await _inject_3d_context(conversation_id, result)
 
 
 def _schedule_title_generation(db, req: ChatRequest):

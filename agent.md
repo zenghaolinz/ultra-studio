@@ -27,6 +27,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat project context helpers: `sidecar/services/chat_projects.py`
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
   - Chat router context gathering and trace block helpers: `sidecar/services/chat_router_context.py`
+  - Chat routed result formatting/context injection helpers: `sidecar/services/chat_router_results.py`
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - Chat direct image/3D generation flows: `sidecar/services/chat_direct_media.py`
   - Chat textual/DSML tool execution helpers: `sidecar/services/chat_textual_tools.py`
@@ -123,6 +124,7 @@ Likely disposable tables:
 - Keep project path lookup, project-context injection text, and open-folder request handling out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
 - Keep router constants, safe JSON parsing, model-capability inference, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`.
 - Keep router context gathering and agent trace block rendering out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_context.py`. Router action execution can stay in chat until those dependencies are split further.
+- Keep routed-result formatting and post-route media context injection out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_results.py`.
 - Keep folder document enumeration and direct document attachment reads out of `sidecar/routes/chat.py`; use `sidecar/services/chat_documents.py`.
 - Keep image data-url creation and vision edit prompt generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_visual_prompts.py`.
 - Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
