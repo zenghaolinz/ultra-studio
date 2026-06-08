@@ -92,9 +92,16 @@ from services.chat_messages import (
     utc_iso as _utc_iso,
 )
 from services.chat_intents import (
+    is_3d_intent as _is_3d_intent,
+    is_image_3d_intent as _is_image_3d_intent,
+    is_image_edit_intent as _is_image_edit_intent,
+    is_image_generation_intent as _is_image_generation_intent,
     is_memory_intent as _is_memory_intent,
+    is_modify_previous_3d_intent as _is_modify_previous_3d_intent,
     is_folder_summary_to_docx_intent as _is_folder_summary_to_docx_intent,
     is_open_folder_intent as _is_open_folder_intent,
+    is_previous_image_edit_intent as _is_previous_image_edit_intent,
+    is_text_3d_intent as _is_text_3d_intent,
     requests_multiview_followup as _requests_multiview_followup,
 )
 from services.chat_asset_prompts import (
@@ -274,174 +281,6 @@ def _run_open_folder_request(req: ChatRequest) -> dict | None:
     except Exception as exc:
         return {"ok": False, "error": str(exc), "path": str(target)}
     return {"ok": True, "path": str(target)}
-
-
-def _is_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:
-    text = (content or "").lower()
-    blocked_words = [
-        "\u8bed\u8a00\u6a21\u578b",
-        "\u5927\u6a21\u578b",
-        "\u6a21\u578b\u914d\u7f6e",
-        "model config",
-        "llm",
-    ]
-    if any(word in text for word in blocked_words):
-        return False
-
-    intent_words = [
-        "3d",
-        "\u4e09\u7ef4",
-        "\u6a21\u578b",
-        "\u5efa\u6a21",
-        "\u8f6c3d",
-        "\u8f6c 3d",
-        "\u751f\u6210\u6a21\u578b",
-    ]
-    action_words = [
-        "\u751f\u6210",
-        "\u505a",
-        "\u7ed9\u6211",
-        "\u6765\u4e00\u4e2a",
-        "\u8981",
-        "\u60f3\u8981",
-        "\u521b\u5efa",
-        "\u5236\u4f5c",
-        "\u8f6c",
-        "\u5efa",
-        "\u753b",
-        "\u8bbe\u8ba1",
-        "\u5e0c\u671b",
-        "\u5168\u65b0",
-        "\u65b0\u7684",
-        "\u53e6\u4e00\u4e2a",
-        "\u53e6\u5916\u4e00\u4e2a",
-        "\u91cd\u65b0\u6765",
-        "\u91cd\u65b0\u505a",
-        "\u4ece\u96f6",
-        "\u6587\u751f",
-    ]
-
-    if image_paths:
-        if not any(os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS for path in image_paths):
-            return False
-        return any(word in text for word in intent_words)
-    return any(word in text for word in intent_words) and any(
-        word in text for word in action_words
-    )
-
-
-def _is_image_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:
-    return bool(image_paths) and _is_3d_intent(content, image_paths)
-
-
-def _is_text_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:
-    return not image_paths and _is_3d_intent(content, image_paths)
-
-
-def _is_image_generation_intent(content: str, image_paths: list[str] | None = None) -> bool:
-    if image_paths:
-        return False
-    text = (content or "").lower()
-    if any(word in text for word in ["3d", "3D", "三维", "模型", "建模", "glb", "obj"]):
-        return False
-    draw_words = [
-        "画",
-        "绘制",
-        "绘图",
-        "生图",
-        "生成图片",
-        "生成一张图",
-        "生成图",
-        "图片生成",
-        "出图",
-        "做一张图",
-        "做张图",
-        "来一张",
-        "来张",
-        "给我一张",
-        "给我张",
-        "我要一张",
-        "我想要一张",
-        "想要一张",
-        "要一张",
-        "要张",
-        "帮我画",
-        "画一张",
-    ]
-    subject_words = [
-        "图",
-        "图片",
-        "插画",
-        "海报",
-        "头像",
-        "概念图",
-        "卡通",
-        "角色",
-        "狗",
-        "猫",
-        "产品",
-        "场景",
-    ]
-    if "图片" in text and any(word in text for word in ["想要", "我要", "给我", "来", "做", "生成"]):
-        return True
-    return any(word in text for word in draw_words) and any(word in text for word in subject_words)
-
-
-def _is_image_edit_intent(content: str, image_paths: list[str] | None = None) -> bool:
-    if not image_paths:
-        return False
-    if not any(os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS for path in image_paths):
-        return False
-    text = (content or "").lower()
-    if _is_3d_intent(content, image_paths):
-        return False
-    edit_words = [
-        "改图",
-        "编辑图片",
-        "修改图片",
-        "把图片",
-        "这张图",
-        "这张图片",
-        "改成",
-        "换成",
-        "润色",
-        "增强",
-        "优化",
-        "完整呈现",
-        "呈现完整",
-        "画完整",
-        "补全",
-        "扩图",
-        "补全图片",
-        "画面完整",
-    ]
-    return any(word in text for word in edit_words)
-
-
-def _is_previous_image_edit_intent(content: str) -> bool:
-    text = (content or "").lower()
-    blocked_words = ["全新", "新的图片", "重新画一张", "不要基于", "不基于", "从零"]
-    if any(word in text for word in blocked_words):
-        return False
-    previous_words = ["上一张", "上张", "刚才", "刚刚", "这张", "这个", "它", "他", "图片", "图中"]
-    edit_words = [
-        "完整呈现",
-        "呈现完整",
-        "画完整",
-        "补全",
-        "扩图",
-        "补全图片",
-        "画面完整",
-        "改图",
-        "编辑图片",
-        "修改图片",
-        "润色",
-        "增强",
-        "优化",
-        "改成",
-        "换成",
-    ]
-    return any(word in text for word in previous_words) and any(word in text for word in edit_words)
 
 
 async def _inject_request_image_context(conversation_id: str, image_paths: list[str] | None):
@@ -958,114 +797,6 @@ async def _run_confirmed_delete_request(
             prompt_override=create_prompt,
     )
     return delete_result, create_result
-
-
-def _is_modify_previous_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:
-    if image_paths:
-        return False
-
-    text = (content or "").lower()
-    blocked_words = [
-        "\u8bed\u8a00\u6a21\u578b",
-        "\u5927\u6a21\u578b",
-        "\u6a21\u578b\u914d\u7f6e",
-        "model config",
-        "llm",
-    ]
-    if any(word in text for word in blocked_words):
-        return False
-
-    new_request_words = [
-        "\u5168\u65b0",
-        "\u65b0\u7684",
-        "\u65b0\u6a21\u578b",
-        "\u53e6\u4e00\u4e2a",
-        "\u53e6\u5916\u4e00\u4e2a",
-        "\u91cd\u65b0\u6765",
-        "\u91cd\u65b0\u505a",
-        "\u91cd\u65b0\u751f\u6210\u4e00\u4e2a",
-        "\u4e0d\u8981\u57fa\u4e8e",
-        "\u4e0d\u57fa\u4e8e",
-        "\u4e0d\u8981\u6cbf\u7528",
-        "\u4e0d\u8981\u7528\u4e0a",
-        "\u4ece\u96f6",
-        "\u6587\u751f\u6a21\u578b",
-        "\u6587\u751f 3d",
-    ]
-    if any(word in text for word in new_request_words):
-        return False
-
-    previous_words = [
-        "\u4e0a\u4e00\u4e2a",
-        "\u4e0a\u6b21",
-        "\u4e4b\u524d",
-        "\u521a\u624d",
-        "\u521a\u521a",
-        "\u8fd9\u4e2a",
-        "\u8fd9\u53ea",
-        "\u5b83",
-        "\u5176",
-    ]
-    edit_words = [
-        "\u4fee\u6539",
-        "\u6539",
-        "\u6539\u6210",
-        "\u6362\u6210",
-        "\u8c03\u6574",
-        "\u4f18\u5316",
-        "\u589e\u5f3a",
-        "\u6da6\u8272",
-        "\u53d8\u6210",
-        "\u53d8",
-        "\u91cd\u65b0\u751f\u6210",
-    ]
-    attribute_words = [
-        "\u9ed1\u8272",
-        "\u767d\u8272",
-        "\u7ea2\u8272",
-        "\u84dd\u8272",
-        "\u7eff\u8272",
-        "\u9ec4\u8272",
-        "\u6a59\u8272",
-        "\u7d2b\u8272",
-        "\u7c89\u8272",
-        "\u7070\u8272",
-        "\u68d5\u8272",
-        "\u91d1\u5c5e",
-        "\u6728\u8d28",
-        "\u73bb\u7483",
-        "\u6bdb\u7ed2",
-        "\u53ef\u7231",
-        "\u5361\u901a",
-        "\u98ce\u683c",
-        "\u6750\u8d28",
-        "\u989c\u8272",
-        "black",
-        "white",
-        "red",
-        "blue",
-        "green",
-        "yellow",
-        "metal",
-        "metallic",
-        "wood",
-        "glass",
-    ]
-    preference_words = [
-        "\u5e0c\u671b",
-        "\u60f3",
-        "\u60f3\u8981",
-        "\u662f",
-        "\u6210\u4e3a",
-        "\u770b\u8d77\u6765",
-    ]
-
-    has_previous_ref = any(word in text for word in previous_words)
-    has_explicit_edit = any(word in text for word in edit_words)
-    has_attribute_change = any(word in text for word in attribute_words) and any(
-        word in text for word in preference_words
-    )
-    return has_previous_ref and (has_explicit_edit or has_attribute_change)
 
 
 async def _find_latest_edit_source_image(conversation_id: str) -> str | None:
