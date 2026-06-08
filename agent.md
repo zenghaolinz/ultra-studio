@@ -19,6 +19,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat intent predicates: `sidecar/services/chat_intents.py`
   - Chat document-to-asset prompt helpers: `sidecar/services/chat_asset_prompts.py`
   - Chat document enumeration/read helpers: `sidecar/services/chat_documents.py`
+  - Chat project/attachment document read orchestration: `sidecar/services/chat_document_read.py`
   - Chat generation context injection/history helpers: `sidecar/services/chat_generation_context.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
@@ -128,6 +129,7 @@ Likely disposable tables:
 - Keep router context gathering and agent trace block rendering out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_context.py`. Router action execution can stay in chat until those dependencies are split further.
 - Keep routed-result formatting and post-route media context injection out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_results.py`.
 - Keep folder document enumeration and direct document attachment reads out of `sidecar/routes/chat.py`; use `sidecar/services/chat_documents.py`.
+- Keep project/attachment document read orchestration out of `sidecar/routes/chat.py`; use `sidecar/services/chat_document_read.py`.
 - Keep image data-url creation and vision edit prompt generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_visual_prompts.py`.
 - Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
 - Keep direct image/3D generation and previous-asset media modification flows out of `sidecar/routes/chat.py`; use `sidecar/services/chat_direct_media.py` for these small ComfyUI dispatch paths.

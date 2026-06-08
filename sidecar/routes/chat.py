@@ -79,6 +79,7 @@ from services.chat_direct_media import (
     run_direct_image_request as _run_direct_image_request,
     run_previous_3d_modification as _run_previous_3d_modification,
 )
+from services.chat_document_read import run_project_document_read as _run_project_document_read
 from services.chat_provider_client import get_provider_client as _get_provider_client
 from services.chat_tool_results import (
     THREE_D_TOOL_NAMES,
@@ -508,29 +509,6 @@ async def _llm_route_request(client, model_name: str, req: ChatRequest, provider
     decision["quality_mode"] = _quality_mode_from_decision(decision)
     print(f"[router] action={action} quality={decision.get('quality_mode')} source={decision.get('source')} reason={decision.get('reason')}")
     return decision
-
-
-async def _run_project_document_read(req: ChatRequest, client, model_name: str) -> str | None:
-    docs = _document_attachments(req.image_paths)
-    if not docs:
-        docs = _project_document_paths(req.project_path or "", req.content)[:5]
-    if not docs:
-        return None
-
-    sections = _read_document_attachments(docs, 14000)
-    system_hint = (
-        "你是项目文档阅读助手。基于已读取的项目文件内容回答用户，不要编造。"
-        "如果用户要求总结，就按要点输出；如果用户要求生成图片/模型提示词，则忠实提取文档要求。"
-    )
-    user_text = f"用户需求：{req.content}\n\n文档路径：\n" + "\n".join(docs) + "\n\n文档内容：\n\n" + "\n\n---\n\n".join(sections)
-    response = await client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": system_hint},
-            {"role": "user", "content": user_text},
-        ],
-    )
-    return response.choices[0].message.content or ""
 
 
 async def _run_router_action(decision: dict, req: ChatRequest, client, model_name: str, provider_config=None) -> dict | str | None:
