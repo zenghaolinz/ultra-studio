@@ -93,7 +93,6 @@ from services.chat_messages import (
     save_assistant_message as _save_assistant_message,
     save_user_message as _save_user_message,
     save_visible_user_message as _save_visible_user_message,
-    utc_iso as _utc_iso,
 )
 from services.chat_intents import (
     is_3d_intent as _is_3d_intent,
@@ -142,6 +141,7 @@ from services.chat_router_results import (
     format_router_result as _format_router_result,
     inject_router_context as _inject_router_context,
 )
+from services.chat_titles import schedule_title_generation as _schedule_title_generation
 from services.chat_projects import (
     project_path_for_request as _project_path_for_request,
     run_open_folder_request as _run_open_folder_request,
@@ -674,44 +674,6 @@ async def _run_router_action(decision: dict, req: ChatRequest, client, model_nam
         return await _run_project_document_read(req, client, model_name)
 
     return None
-
-
-def _schedule_title_generation(db, req: ChatRequest):
-    if not req.hidden_user_message:
-        asyncio.create_task(_maybe_generate_title(db, req.conversation_id, req.content))
-
-
-async def _maybe_generate_title(db, conversation_id: str, user_content: str, model_id: str | None = None):
-    row = await db.execute_fetchall(
-        "SELECT title FROM conversations WHERE id = ?", (conversation_id,)
-    )
-    if not row or row[0][0] != "新对话":
-        return
-    client, provider_config = await _get_provider_client(db, model_id)
-    if not client:
-        return
-    try:
-        response = await client.chat.completions.create(
-            model=provider_config[1],
-            messages=[
-                {
-                    "role": "system",
-                    "content": "用不超过8个汉字概括以下对话的主题，只输出标题，不要加引号或其他符号。",
-                },
-                {"role": "user", "content": user_content[:200]},
-            ],
-            max_tokens=20,
-        )
-        title = response.choices[0].message.content.strip().strip('"').strip("'")
-        if title:
-            now = _utc_iso()
-            await db.execute(
-                "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
-                (title, now, conversation_id),
-            )
-            await db.commit()
-    except Exception:
-        pass
 
 
 async def _run_tool_calls(

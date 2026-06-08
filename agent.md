@@ -28,6 +28,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
   - Chat router context gathering and trace block helpers: `sidecar/services/chat_router_context.py`
   - Chat routed result formatting/context injection helpers: `sidecar/services/chat_router_results.py`
+  - Chat title generation helpers: `sidecar/services/chat_titles.py`
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - Chat direct image/3D generation flows: `sidecar/services/chat_direct_media.py`
   - Chat textual/DSML tool execution helpers: `sidecar/services/chat_textual_tools.py`
@@ -117,7 +118,8 @@ Likely disposable tables:
 - Keep reusable chat intent predicates out of `sidecar/routes/chat.py`; use `sidecar/services/chat_intents.py` for small intent detectors that do not need DB/model context, including image/3D generation and previous-asset edit intent checks.
 - Keep deterministic document-to-asset prompt extraction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_asset_prompts.py` for requirement text cleanup and deterministic image/3D fallback prompts.
 - Keep generation context injection and latest generated image/multiview lookup out of `sidecar/routes/chat.py`; use `sidecar/services/chat_generation_context.py` for STM context strings and history scanning.
-- Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
+- Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages.
+- Keep conversation title generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_titles.py`.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
 - Keep chat provider config lookup and `AsyncOpenAI` client construction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_provider_client.py`.
 - Keep project document/image/file candidate scanning out of `sidecar/routes/chat.py`; use `sidecar/services/chat_project_files.py` for fuzzy matching files under the current project root.
