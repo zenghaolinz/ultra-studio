@@ -10,11 +10,6 @@ if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
 from routes.chat import (
-    _delete_then_create_prompt,
-    _extract_confirmed_command,
-    _extract_confirmed_delete,
-    _extract_confirmed_project_check,
-    _extract_delete_continuation,
     _extract_textual_tool_call,
     _extract_textual_tool_calls,
     _format_text_file_create_response,
@@ -27,7 +22,14 @@ from routes.chat import (
     _run_direct_text_file_edit,
     _run_textual_tool_call,
     _run_textual_tool_calls,
-    _with_delete_continuation,
+)
+from services.chat_confirmations import (
+    delete_then_create_prompt as _delete_then_create_prompt,
+    extract_confirmed_command as _extract_confirmed_command,
+    extract_confirmed_delete as _extract_confirmed_delete,
+    extract_confirmed_project_check as _extract_confirmed_project_check,
+    extract_delete_continuation as _extract_delete_continuation,
+    with_delete_continuation as _with_delete_continuation,
 )
 from schemas import ChatRequest
 from tools import file_tools

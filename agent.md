@@ -16,6 +16,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat routes and orchestration: `sidecar/routes/chat.py`
   - Chat response formatting helpers: `sidecar/services/chat_response_formatters.py`
   - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
+  - Chat confirmed delete/delete-then-create flow: `sidecar/services/chat_delete_flow.py`
   - Chat intent predicates: `sidecar/services/chat_intents.py`
   - Chat document-to-asset prompt helpers: `sidecar/services/chat_asset_prompts.py`
   - Chat document enumeration/read helpers: `sidecar/services/chat_documents.py`
@@ -116,6 +117,7 @@ Likely disposable tables:
 - Do not expose or log plaintext API keys.
 - Keep pure chat response formatting out of `sidecar/routes/chat.py`; add formatters to `sidecar/services/chat_response_formatters.py` and alias imports in chat when preserving old call names reduces risk.
 - Keep confirmation parsing and simple confirmed command/project-check dispatch out of `sidecar/routes/chat.py`; those helpers live in `sidecar/services/chat_confirmations.py`. Leave flows that need the chat LLM client in chat until they have a cleaner orchestration boundary.
+- Keep confirmed delete/delete-then-create execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_delete_flow.py`.
 - Keep reusable chat intent predicates out of `sidecar/routes/chat.py`; use `sidecar/services/chat_intents.py` for small intent detectors that do not need DB/model context, including image/3D generation and previous-asset edit intent checks.
 - Keep deterministic document-to-asset prompt extraction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_asset_prompts.py` for requirement text cleanup and deterministic image/3D fallback prompts.
 - Keep generation context injection and latest generated image/multiview lookup out of `sidecar/routes/chat.py`; use `sidecar/services/chat_generation_context.py` for STM context strings and history scanning.

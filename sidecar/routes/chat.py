@@ -44,9 +44,7 @@ from services.chat_response_formatters import (
     format_write_many_files_response as _format_write_many_files_response,
 )
 from services.chat_confirmations import (
-    delete_then_create_prompt as _delete_then_create_prompt,
     extract_confirmed_command as _extract_confirmed_command,
-    extract_confirmed_delete as _extract_confirmed_delete,
     extract_confirmed_project_check as _extract_confirmed_project_check,
     extract_delete_continuation as _extract_delete_continuation,
     is_delete_request_text as _is_delete_request_text,
@@ -54,6 +52,7 @@ from services.chat_confirmations import (
     run_confirmed_project_check_request as _run_confirmed_project_check_request,
     with_delete_continuation as _with_delete_continuation,
 )
+from services.chat_delete_flow import run_confirmed_delete_request as _run_confirmed_delete_request
 from services.generation_runtime import (
     COMFY_MANUAL_START_STATUS,
     COMFY_QUEUED_STATUS,
@@ -413,37 +412,6 @@ async def _run_project_document_asset_request(req: ChatRequest, client, model_na
     result["source_prompt"] = prompt
     result["source_documents"] = docs
     return {"tool": "generate_image", "result": result}
-
-
-async def _run_confirmed_delete_request(
-    req: ChatRequest,
-    client,
-    model_name: str,
-) -> tuple[dict, dict | None] | None:
-    parsed = _extract_confirmed_delete(req.content)
-    if not parsed:
-        return None
-    target, continuation = parsed
-    target_path = Path(target)
-    recursive = target_path.exists() and target_path.is_dir()
-    delete_result = memory_mgr.handle_delete_path(
-        target,
-        "auto",
-        recursive,
-        True,
-        req.permission_mode,
-    )
-    create_result = None
-    if delete_result.get("ok") and continuation:
-        create_prompt = _delete_then_create_prompt(target, continuation)
-        create_result = await _run_direct_text_file_create(
-            req,
-            client,
-            model_name,
-            force=True,
-            prompt_override=create_prompt,
-    )
-    return delete_result, create_result
 
 
 async def _llm_route_request(client, model_name: str, req: ChatRequest, provider_config=None) -> dict | None:
