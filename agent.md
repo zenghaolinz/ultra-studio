@@ -18,6 +18,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
   - Chat intent predicates: `sidecar/services/chat_intents.py`
   - Chat document-to-asset prompt helpers: `sidecar/services/chat_asset_prompts.py`
+  - Chat generation context injection/history helpers: `sidecar/services/chat_generation_context.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
   - Chat project context helpers: `sidecar/services/chat_projects.py`
@@ -107,6 +108,7 @@ Likely disposable tables:
 - Keep confirmation parsing and simple confirmed command/project-check dispatch out of `sidecar/routes/chat.py`; those helpers live in `sidecar/services/chat_confirmations.py`. Leave flows that need the chat LLM client in chat until they have a cleaner orchestration boundary.
 - Keep reusable chat intent predicates out of `sidecar/routes/chat.py`; use `sidecar/services/chat_intents.py` for small intent detectors that do not need DB/model context, including image/3D generation and previous-asset edit intent checks.
 - Keep deterministic document-to-asset prompt extraction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_asset_prompts.py` for requirement text cleanup and deterministic image/3D fallback prompts.
+- Keep generation context injection and latest generated image/multiview lookup out of `sidecar/routes/chat.py`; use `sidecar/services/chat_generation_context.py` for STM context strings and history scanning.
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
 - Keep project path lookup and project-context injection text out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.

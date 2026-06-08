@@ -138,38 +138,17 @@ from services.chat_projects import (
     project_path_for_request as _project_path_for_request,
     with_project_context as _with_project_context,
 )
+from services.chat_generation_context import (
+    find_latest_edit_source_image as _find_latest_edit_source_image,
+    find_latest_multiview_paths as _find_latest_multiview_paths,
+    inject_3d_context as _inject_3d_context,
+    inject_image_context as _inject_image_context,
+    inject_request_image_context as _inject_request_image_context,
+)
 
 router = APIRouter()
 
 MAX_TOOL_CALL_ROUNDS = 6
-
-ASSET_IMAGE_PATTERNS = [
-    re.compile(r'活跃生成图片路径="([^"]+)"'),
-    re.compile(r'活跃图像路径="([^"]+)"'),
-    re.compile(r'预览图:\s*`([^`]+)`'),
-    re.compile(r'生成图片\s*:\s*`([^`]+)`'),
-    re.compile(r'编辑后图片\s*:\s*`([^`]+)`'),
-    re.compile(r'image_2d["\']?\s*[:=]\s*["\']([^"\']+)["\']'),
-]
-
-MULTIVIEW_CONTEXT_PATTERNS = {
-    "front": [
-        re.compile(r'活跃三视图正面="([^"]+)"'),
-        re.compile(r'正面:\s*`([^`]+)`'),
-        re.compile(r'front_path["\']?\s*[:=]\s*["\']([^"\']+)["\']'),
-    ],
-    "left": [
-        re.compile(r'活跃三视图左侧="([^"]+)"'),
-        re.compile(r'左侧:\s*`([^`]+)`'),
-        re.compile(r'left_path["\']?\s*[:=]\s*["\']([^"\']+)["\']'),
-    ],
-    "back": [
-        re.compile(r'活跃三视图背面="([^"]+)"'),
-        re.compile(r'背面:\s*`([^`]+)`'),
-        re.compile(r'back_path["\']?\s*[:=]\s*["\']([^"\']+)["\']'),
-    ],
-}
-
 
 def _folder_documents(folder: Path, recursive: bool = False, limit: int = 12) -> list[Path]:
     iterator = folder.rglob("*") if recursive else folder.iterdir()
@@ -281,44 +260,6 @@ def _run_open_folder_request(req: ChatRequest) -> dict | None:
     except Exception as exc:
         return {"ok": False, "error": str(exc), "path": str(target)}
     return {"ok": True, "path": str(target)}
-
-
-async def _inject_request_image_context(conversation_id: str, image_paths: list[str] | None):
-    paths = [
-        os.path.normpath(path)
-        for path in image_paths or []
-        if path and os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
-    ]
-    if not paths:
-        return
-    await memory_stm.inject_system_context(
-        conversation_id,
-        "\n".join(f'[System Context: 活跃图像路径="{path}"]' for path in paths[:4]),
-    )
-
-
-async def _inject_image_context(conversation_id: str, result: dict):
-    if result.get("status") != "success":
-        return
-    front = result.get("front_path") or result.get("frontPath")
-    left = result.get("left_path") or result.get("leftPath")
-    back = result.get("back_path") or result.get("backPath")
-    if front and left and back:
-        await memory_stm.inject_system_context(
-            conversation_id,
-            "\n".join([
-                f"[System Context: 活跃三视图正面=\"{front}\"]",
-                f"[System Context: 活跃三视图左侧=\"{left}\"]",
-                f"[System Context: 活跃三视图背面=\"{back}\"]",
-            ]),
-        )
-        return
-    image_path = result.get("image_path") or result.get("imagePath") or result.get("improved_image_path")
-    if image_path:
-        await memory_stm.inject_system_context(
-            conversation_id,
-            f"[System Context: 活跃图像路径=\"{image_path}\"]",
-        )
 
 
 async def _run_direct_image_request(
@@ -797,81 +738,6 @@ async def _run_confirmed_delete_request(
             prompt_override=create_prompt,
     )
     return delete_result, create_result
-
-
-async def _find_latest_edit_source_image(conversation_id: str) -> str | None:
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT content FROM stm_entries WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 40",
-        (conversation_id,),
-    )
-
-    for (content,) in rows:
-        if not content:
-            continue
-        for pattern in ASSET_IMAGE_PATTERNS:
-            match = pattern.search(content)
-            if not match:
-                continue
-            path = os.path.normpath(match.group(1))
-            if os.path.exists(path):
-                return path
-    return None
-
-
-async def _find_latest_multiview_paths(conversation_id: str) -> dict | None:
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT content FROM stm_entries WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 60",
-        (conversation_id,),
-    )
-    found = {"front": "", "left": "", "back": ""}
-    for row in rows:
-        content = row["content"] or ""
-        for key, patterns in MULTIVIEW_CONTEXT_PATTERNS.items():
-            if found[key]:
-                continue
-            for pattern in patterns:
-                match = pattern.search(content)
-                if not match:
-                    continue
-                path = os.path.normpath(match.group(1))
-                if os.path.exists(path):
-                    found[key] = path
-                    break
-        if all(found.values()):
-            return found
-    return None
-
-
-async def _inject_3d_context(conversation_id: str, result: dict):
-    parts = []
-    image_path = (
-        result.get("source_image_path")
-        or result.get("sourceImagePath")
-        or result.get("image_2d")
-        or result.get("image2D")
-    )
-    model_path = result.get("model_path") or result.get("modelPath")
-    source1 = result.get("image1_path") or result.get("image1Path")
-    source2 = result.get("image2_path") or result.get("image2Path")
-    front = result.get("front_path") or result.get("frontPath")
-    left = result.get("left_path") or result.get("leftPath")
-    back = result.get("back_path") or result.get("backPath")
-    if image_path:
-        parts.append(f"[System Context: 活跃生成图片路径=\"{image_path}\"]")
-    if model_path:
-        parts.append(f"[System Context: 活跃模型路径=\"{model_path}\"]")
-    if source1:
-        parts.append(f"[System Context: 活跃融合源图1=\"{source1}\"]")
-    if source2:
-        parts.append(f"[System Context: 活跃融合源图2=\"{source2}\"]")
-    if front and left and back:
-        parts.append(f"[System Context: 活跃三视图正面=\"{front}\"]")
-        parts.append(f"[System Context: 活跃三视图左侧=\"{left}\"]")
-        parts.append(f"[System Context: 活跃三视图背面=\"{back}\"]")
-    if parts:
-        await memory_stm.inject_system_context(conversation_id, "\n".join(parts))
 
 
 async def _run_direct_3d_request(content: str, image_paths: list[str] | None) -> dict | None:
