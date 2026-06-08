@@ -208,7 +208,7 @@ class AgentCommandConfirmTests(unittest.IsolatedAsyncioTestCase):
             '</| | DSML | | invoke>\n'
             '</| | DSML | | tool_calls>'
         )
-        with patch("routes.chat.memory_mgr.handle_web_fetch") as fetch:
+        with patch("services.chat_textual_tools.memory_mgr.handle_web_fetch") as fetch:
             fetch.return_value = {"ok": True, "url": "https://example.com/a", "text": "ok"}
 
             results = _run_textual_tool_calls(content)
