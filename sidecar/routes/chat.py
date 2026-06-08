@@ -75,6 +75,11 @@ from services.chat_textual_tools import (
     run_textual_tool_call as _run_textual_tool_call,
     run_textual_tool_calls as _run_textual_tool_calls,
 )
+from services.chat_direct_media import (
+    run_direct_3d_request as _run_direct_3d_request,
+    run_direct_image_request as _run_direct_image_request,
+    run_previous_3d_modification as _run_previous_3d_modification,
+)
 from services.chat_tool_results import (
     THREE_D_TOOL_NAMES,
     any_requires_manual_comfy_start as _any_requires_manual_comfy_start,
@@ -111,7 +116,6 @@ from services.chat_paths import (
     DOCX_PATH_PATTERN,
     DOCUMENT_EXTENSIONS,
     GENERATED_TEXT_EXTENSIONS,
-    IMAGE_EXTENSIONS,
     TEXT_FILE_PATH_PATTERN,
     candidate_local_paths as _candidate_local_paths,
     document_attachments as _document_attachments,
@@ -238,39 +242,6 @@ async def _summarize_folder_documents(req: ChatRequest, client, model_name: str)
         create_result["document_count"] = len(docs)
         create_result["documents"] = [str(doc) for doc in docs]
     return create_result
-
-
-async def _run_direct_image_request(
-    content: str,
-    image_paths: list[str] | None,
-    conversation_id: str | None = None,
-    project_path: str | None = None,
-) -> dict | None:
-    if _is_image_edit_intent(content, image_paths):
-        source = next(
-            (
-                os.path.normpath(path)
-                for path in image_paths or []
-                if os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
-            ),
-            None,
-        )
-        if not source:
-            return None
-        result = await asyncio.to_thread(memory_mgr.handle_modify_image, source, content.strip())
-        return {"tool": "edit_image", "result": result}
-    if conversation_id and _is_previous_image_edit_intent(content):
-        source = await _find_latest_edit_source_image(conversation_id)
-        if not source:
-            project_images = _project_image_paths(project_path, content, limit=1)
-            source = os.path.normpath(project_images[0]) if project_images else None
-        if source:
-            result = await asyncio.to_thread(memory_mgr.handle_modify_image, source, content.strip())
-            return {"tool": "edit_image", "result": result}
-    if _is_image_generation_intent(content, image_paths):
-        result = await asyncio.to_thread(memory_mgr.handle_generate_image, content.strip(), "fast")
-        return {"tool": "generate_image", "result": result}
-    return None
 
 
 def _is_attachment_asset_intent(content: str, image_paths: list[str] | None) -> str | None:
@@ -467,83 +438,6 @@ async def _run_confirmed_delete_request(
             prompt_override=create_prompt,
     )
     return delete_result, create_result
-
-
-async def _run_direct_3d_request(content: str, image_paths: list[str] | None) -> dict | None:
-    if not _is_3d_intent(content, image_paths):
-        return None
-
-    paths = [
-        os.path.normpath(path)
-        for path in image_paths or []
-        if path and os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
-    ]
-    if not paths:
-        prompt = content.strip()
-        if not prompt:
-            return {
-                "tool": "generate_3d_from_text",
-                "result": {"status": "error", "message": "Prompt cannot be empty"},
-            }
-        result = await asyncio.to_thread(
-            memory_mgr.handle_generate_3d_from_text,
-            prompt,
-            "fast",
-        )
-        return {"tool": "generate_3d_from_text", "result": result}
-
-    if len(paths) >= 2:
-        prompt = content.strip() or "Fuse these two images into one coherent 3D asset"
-        result = await asyncio.to_thread(
-            memory_mgr.handle_generate_3d_fusion,
-            paths[0],
-            paths[1],
-            prompt,
-        )
-        return {"tool": "generate_3d_fusion", "result": result}
-
-    result = await asyncio.to_thread(memory_mgr.handle_generate_3d_from_image, paths[0])
-    return {"tool": "generate_3d_from_image", "result": result}
-
-
-async def _run_previous_3d_modification(
-    conversation_id: str,
-    content: str,
-    image_paths: list[str] | None,
-) -> dict | None:
-    if not _is_modify_previous_3d_intent(content, image_paths):
-        return None
-
-    source_image = await _find_latest_edit_source_image(conversation_id)
-    if not source_image:
-        if _is_3d_intent(content, image_paths):
-            return None
-        return {
-            "tool": "modify_previous_3d",
-            "result": {
-                "status": "error",
-                "message": "\u6ca1\u627e\u5230\u4e0a\u4e00\u6b21\u751f\u6210\u7684 Flux \u6e90\u56fe\uff0c\u65e0\u6cd5\u57fa\u4e8e\u4e4b\u524d\u7684\u6a21\u578b\u4fee\u6539\u3002",
-            },
-        }
-
-    improved = await asyncio.to_thread(
-        memory_mgr.handle_modify_image,
-        source_image,
-        content.strip(),
-        0.5,
-    )
-    if improved.get("status") != "success" or not improved.get("improved_image_path"):
-        return {"tool": "modify_previous_3d", "result": improved}
-
-    regenerated = await asyncio.to_thread(
-        memory_mgr.handle_generate_3d_from_image,
-        improved["improved_image_path"],
-    )
-    if regenerated.get("status") == "success":
-        regenerated["image_2d"] = improved["improved_image_path"]
-        regenerated["source_image"] = source_image
-        regenerated["message"] = "Modified previous Flux image and regenerated 3D."
-    return {"tool": "modify_previous_3d", "result": regenerated}
 
 
 async def _get_provider_client(db, model_id: str | None = None):
