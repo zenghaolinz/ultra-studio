@@ -129,12 +129,14 @@ from services.chat_paths import (
 )
 from services.chat_router import (
     ROUTER_ACTIONS,
-    build_agent_trace_payload as _build_agent_trace_payload,
-    direct_agent_trace_decision as _direct_agent_trace_decision,
-    format_agent_trace_block as _format_agent_trace_block,
     model_capabilities as _model_capabilities,
     quality_mode_from_decision as _quality_mode_from_decision,
     router_safe_json as _router_safe_json,
+)
+from services.chat_router_context import (
+    agent_trace_block as _agent_trace_block,
+    build_router_context as _build_router_context,
+    direct_agent_trace_block as _direct_agent_trace_block,
 )
 from services.chat_projects import (
     project_path_for_request as _project_path_for_request,
@@ -150,7 +152,6 @@ from services.chat_generation_context import (
 )
 from services.chat_project_files import (
     project_document_paths as _project_document_paths,
-    project_file_candidates as _project_file_candidates,
     project_image_paths as _project_image_paths,
 )
 from services.chat_documents import (
@@ -438,61 +439,6 @@ async def _run_confirmed_delete_request(
             prompt_override=create_prompt,
     )
     return delete_result, create_result
-
-
-async def _build_router_context(req: ChatRequest, capabilities: dict | None = None) -> dict:
-    latest_image = await _find_latest_edit_source_image(req.conversation_id)
-    latest_multiview = await _find_latest_multiview_paths(req.conversation_id)
-    image_paths = _image_attachments(req.image_paths)
-    document_paths = _document_attachments(req.image_paths)
-    project_documents = []
-    project_images = []
-    project_files = []
-    if req.project_path:
-        project_documents = _project_document_paths(req.project_path, req.content)[:5]
-        project_images = _project_image_paths(req.project_path, req.content)[:5]
-        project_files = _project_file_candidates(req.project_path, req.content)[:20]
-    return {
-        "permission_mode": req.permission_mode,
-        "project_path": req.project_path or "",
-        "model_capabilities": capabilities or {},
-        "attached_images": image_paths,
-        "attached_documents": document_paths,
-        "project_document_candidates": project_documents,
-        "project_image_candidates": project_images,
-        "project_file_candidates": project_files,
-        "latest_active_image": latest_image or "",
-        "has_latest_active_image": bool(latest_image),
-        "latest_multiview": latest_multiview or {},
-        "has_latest_multiview": bool(latest_multiview),
-    }
-
-
-async def _agent_trace_block(
-    req: ChatRequest,
-    provider_config,
-    decision: dict | None,
-    routed_result: dict | str | None,
-) -> str:
-    capabilities = _model_capabilities(provider_config, req.vision_enabled)
-    context = await _build_router_context(req, capabilities)
-    trace = _build_agent_trace_payload(req, provider_config, capabilities, context, decision, routed_result)
-    return _format_agent_trace_block(trace)
-
-
-async def _direct_agent_trace_block(
-    req: ChatRequest,
-    provider_config,
-    action: str,
-    tool: str,
-    result: dict | None = None,
-    reason: str = "",
-    source: str = "direct",
-    source_files: list[str] | None = None,
-) -> str:
-    decision = _direct_agent_trace_decision(req.content, action, tool, reason, source, source_files)
-    routed_result = {"tool": tool, "result": result or {}}
-    return await _agent_trace_block(req, provider_config, decision, routed_result)
 
 
 async def _llm_route_request(client, model_name: str, req: ChatRequest, provider_config=None) -> dict | None:
