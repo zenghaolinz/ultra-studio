@@ -97,7 +97,6 @@ from services.chat_intents import (
     is_memory_intent as _is_memory_intent,
     is_modify_previous_3d_intent as _is_modify_previous_3d_intent,
     is_folder_summary_to_docx_intent as _is_folder_summary_to_docx_intent,
-    is_open_folder_intent as _is_open_folder_intent,
     is_previous_image_edit_intent as _is_previous_image_edit_intent,
     is_text_3d_intent as _is_text_3d_intent,
     requests_multiview_followup as _requests_multiview_followup,
@@ -134,6 +133,7 @@ from services.chat_router import (
 )
 from services.chat_projects import (
     project_path_for_request as _project_path_for_request,
+    run_open_folder_request as _run_open_folder_request,
     with_project_context as _with_project_context,
 )
 from services.chat_generation_context import (
@@ -237,24 +237,6 @@ async def _summarize_folder_documents(req: ChatRequest, client, model_name: str)
         create_result["document_count"] = len(docs)
         create_result["documents"] = [str(doc) for doc in docs]
     return create_result
-
-
-def _run_open_folder_request(req: ChatRequest) -> dict | None:
-    if not _is_open_folder_intent(req.content):
-        return None
-    target = _extract_directory_path(req.content)
-    if not target and req.project_path:
-        target = Path(req.project_path)
-    if not target or not target.exists() or not target.is_dir():
-        return {"ok": False, "error": "没有找到可打开的文件夹路径"}
-    try:
-        if os.name == "nt":
-            os.startfile(str(target))  # type: ignore[attr-defined]
-        else:
-            return {"ok": False, "error": "当前只支持在 Windows 上直接打开文件夹", "path": str(target)}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc), "path": str(target)}
-    return {"ok": True, "path": str(target)}
 
 
 async def _run_direct_image_request(

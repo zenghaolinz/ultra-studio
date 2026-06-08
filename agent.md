@@ -115,7 +115,7 @@ Likely disposable tables:
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages. Title generation can stay near provider-client orchestration until it is split cleanly.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
 - Keep project document/image/file candidate scanning out of `sidecar/routes/chat.py`; use `sidecar/services/chat_project_files.py` for fuzzy matching files under the current project root.
-- Keep project path lookup and project-context injection text out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
+- Keep project path lookup, project-context injection text, and open-folder request handling out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
 - Keep router constants, safe JSON parsing, model-capability inference, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`. Router context gathering and action execution can stay in chat until those dependencies are split further.
 - Keep folder document enumeration and direct document attachment reads out of `sidecar/routes/chat.py`; use `sidecar/services/chat_documents.py`.
 - Keep image data-url creation and vision edit prompt generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_visual_prompts.py`.
