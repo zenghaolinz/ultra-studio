@@ -48,6 +48,52 @@ def quality_mode_from_decision(decision: dict | None) -> str:
     return "quality" if mode == "quality" else "fast"
 
 
+def model_capabilities(provider_config, vision_override: bool | None = None) -> dict:
+    provider = (provider_config[0] if provider_config else "") or ""
+    model_name = (provider_config[1] if provider_config else "") or ""
+    text = f"{provider} {model_name}".lower()
+    vision_markers = [
+        "vision",
+        "vl",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "qwen-omni",
+        "gpt-4o",
+        "gpt-4.1",
+        "o3",
+        "o4",
+        "gemini",
+        "claude-3",
+        "claude-4",
+        "glm-4v",
+        "glm-4.5v",
+        "kimi-vl",
+    ]
+    text_only_markers = ["qwen3", "qwen3.5", "deepseek", "llama", "mistral", "mixtral"]
+    supports_vision = any(marker in text for marker in vision_markers)
+    if any(marker in text for marker in text_only_markers) and not any(marker in text for marker in ["vl", "vision", "omni"]):
+        supports_vision = False
+    if vision_override is True:
+        supports_vision = True
+    elif vision_override is False:
+        supports_vision = False
+    return {
+        "provider": provider,
+        "model_name": model_name,
+        "supports_vision": supports_vision,
+        "vision_reason": (
+            "user enabled Vision"
+            if vision_override is True
+            else "user disabled Vision"
+            if vision_override is False
+            else "model name indicates vision/multimodal support"
+            if supports_vision
+            else "model name treated as text-only"
+        ),
+    }
+
+
 def build_agent_trace_payload(
     req,
     provider_config,

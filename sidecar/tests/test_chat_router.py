@@ -11,6 +11,7 @@ from services.chat_router import (
     build_agent_trace_payload,
     direct_agent_trace_decision,
     format_agent_trace_block,
+    model_capabilities,
     quality_mode_from_decision,
     router_safe_json,
 )
@@ -31,6 +32,11 @@ class ChatRouterTests(unittest.TestCase):
         self.assertEqual(quality_mode_from_decision({"quality_mode": "quality"}), "quality")
         self.assertEqual(quality_mode_from_decision({"quality_mode": "slow"}), "fast")
         self.assertEqual(quality_mode_from_decision(None), "fast")
+
+    def test_model_capabilities_detects_vision_and_override(self) -> None:
+        self.assertTrue(model_capabilities(("openai", "gpt-4o"))["supports_vision"])
+        self.assertFalse(model_capabilities(("local", "qwen3"))["supports_vision"])
+        self.assertTrue(model_capabilities(("local", "qwen3"), vision_override=True)["supports_vision"])
 
     def test_build_agent_trace_payload_includes_context_and_outputs(self) -> None:
         req = type("Req", (), {"vision_enabled": True})()

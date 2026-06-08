@@ -111,7 +111,6 @@ from services.chat_asset_prompts import (
 from services.chat_paths import (
     DOCX_PATH_PATTERN,
     DOCUMENT_EXTENSIONS,
-    FOLDER_SUMMARY_EXTENSIONS,
     GENERATED_TEXT_EXTENSIONS,
     IMAGE_EXTENSIONS,
     TEXT_FILE_PATH_PATTERN,
@@ -130,6 +129,7 @@ from services.chat_router import (
     build_agent_trace_payload as _build_agent_trace_payload,
     direct_agent_trace_decision as _direct_agent_trace_decision,
     format_agent_trace_block as _format_agent_trace_block,
+    model_capabilities as _model_capabilities,
     quality_mode_from_decision as _quality_mode_from_decision,
     router_safe_json as _router_safe_json,
 )
@@ -149,23 +149,14 @@ from services.chat_project_files import (
     project_file_candidates as _project_file_candidates,
     project_image_paths as _project_image_paths,
 )
+from services.chat_documents import (
+    folder_documents as _folder_documents,
+    read_document_attachments as _read_document_attachments,
+)
 
 router = APIRouter()
 
 MAX_TOOL_CALL_ROUNDS = 6
-
-def _folder_documents(folder: Path, recursive: bool = False, limit: int = 12) -> list[Path]:
-    iterator = folder.rglob("*") if recursive else folder.iterdir()
-    docs = []
-    for item in iterator:
-        if len(docs) >= limit:
-            break
-        if not item.is_file():
-            continue
-        if item.suffix.lower() in FOLDER_SUMMARY_EXTENSIONS:
-            docs.append(item)
-    return docs
-
 
 async def _summarize_folder_documents(req: ChatRequest, client, model_name: str) -> dict | None:
     if req.image_paths or not _is_folder_summary_to_docx_intent(req.content):
@@ -346,17 +337,6 @@ def _is_project_document_asset_intent(content: str, project_path: str | None) ->
     if _is_image_generation_intent(content, None):
         return "image"
     return None
-
-
-def _read_document_attachments(paths: list[str], max_chars: int = 16000) -> list[str]:
-    sections: list[str] = []
-    for path in paths[:4]:
-        result = memory_mgr.handle_read_document(path, max_chars)
-        if not result.get("ok"):
-            sections.append(f"[{path}]\n读取失败: {result.get('error', 'unknown error')}")
-            continue
-        sections.append(f"[{result.get('name') or path}]\n{result.get('content', '')}")
-    return sections
 
 
 async def _build_asset_prompt_from_documents(
@@ -701,52 +681,6 @@ async def _get_provider_client(db, model_id: str | None = None):
         base_url=provider_config[3],
     )
     return client, provider_config
-
-
-def _model_capabilities(provider_config, vision_override: bool | None = None) -> dict:
-    provider = (provider_config[0] if provider_config else "") or ""
-    model_name = (provider_config[1] if provider_config else "") or ""
-    text = f"{provider} {model_name}".lower()
-    vision_markers = [
-        "vision",
-        "vl",
-        "qwen-vl",
-        "qwen2-vl",
-        "qwen2.5-vl",
-        "qwen-omni",
-        "gpt-4o",
-        "gpt-4.1",
-        "o3",
-        "o4",
-        "gemini",
-        "claude-3",
-        "claude-4",
-        "glm-4v",
-        "glm-4.5v",
-        "kimi-vl",
-    ]
-    text_only_markers = ["qwen3", "qwen3.5", "deepseek", "llama", "mistral", "mixtral"]
-    supports_vision = any(marker in text for marker in vision_markers)
-    if any(marker in text for marker in text_only_markers) and not any(marker in text for marker in ["vl", "vision", "omni"]):
-        supports_vision = False
-    if vision_override is True:
-        supports_vision = True
-    elif vision_override is False:
-        supports_vision = False
-    return {
-        "provider": provider,
-        "model_name": model_name,
-        "supports_vision": supports_vision,
-        "vision_reason": (
-            "user enabled Vision"
-            if vision_override is True
-            else "user disabled Vision"
-            if vision_override is False
-            else "model name indicates vision/multimodal support"
-            if supports_vision
-            else "model name treated as text-only"
-        ),
-    }
 
 
 def _image_url_part(path: str) -> dict | None:
