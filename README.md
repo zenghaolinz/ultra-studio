@@ -1,6 +1,6 @@
 # Ultra Studio
 
-Ultra Studio 是一个桌面端 AI 创作工作台。它使用 Tauri 承载 React/Vite 前端，并通过 Python sidecar 提供本地 Agent、记忆管理、模型配置、文件工具、ComfyUI 连接和 3D 资产生成能力。
+Ultra Studio 是一个桌面端 AI 创作工作台。应用基于 Tauri、React/Vite 和 Python sidecar 构建，提供 Agent 对话、记忆管理、模型配置、文件工具、ComfyUI 连接和 3D 资产生成等能力。
 
 ## 功能
 
@@ -23,7 +23,7 @@ Ultra Studio 是一个桌面端 AI 创作工作台。它使用 Tauri 承载 Reac
 - Zustand
 - Three.js / React Three Fiber
 - Python FastAPI sidecar
-- SQLite 本地数据库
+- SQLite
 - Rust 命令桥接
 
 ## 目录结构
@@ -82,17 +82,15 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 应用启动后，在设置页配置聊天模型和 Embedding 模型。
 
-API Key 会写入本地 SQLite 数据库，不会提交到仓库。仓库中只包含配置字段和占位测试值，不包含真实密钥。
-
 ## ComfyUI 配置
 
-真实配置文件为：
+ComfyUI 配置文件位于：
 
 ```text
 sidecar/config.ini
 ```
 
-首次运行时可从示例配置复制：
+首次运行时，可以从示例配置复制：
 
 ```text
 sidecar/config.example.ini
@@ -111,7 +109,7 @@ path = E:/ComfyUI_windows_portable
 
 ## 本地数据
 
-以下内容属于运行时数据，不包含在公开代码导出中：
+以下内容属于本地运行数据，不包含在公开代码导出中：
 
 - `sidecar/config.ini`
 - `sidecar/data/`
@@ -122,12 +120,6 @@ path = E:/ComfyUI_windows_portable
 - `dist/`
 - `src-tauri/target/`
 - 模型权重文件
-
-## 安全说明
-
-本仓库公开版本已排除本地配置、数据库、日志、输出目录、构建产物、依赖目录和模型权重。提交前已扫描常见 API key/token 形态，未发现真实密钥。
-
-如果你在本地配置过真实模型 API Key，请不要提交本地数据库或配置文件。
 
 ## 编码说明
 
