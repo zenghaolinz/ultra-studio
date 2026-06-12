@@ -1,0 +1,52 @@
+# Dependencies and build output
+node_modules/
+dist/
+src-tauri/target/
+sidecar/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local runtime data
+logs/
+sidecar/logs/
+sidecar/data/
+sidecar/agent.db
+sidecar/config.ini
+outputs/
+
+# Generated presentation/video assets
+docs/ppt_assets/
+docs/showcase/
+docs/ultra-studio-intro-video/
+docs/ultra-studio-intro-video/node_modules/
+docs/ultra-studio-intro-video/dist/
+docs/*.pptx
+docs/UltraStudio_5分钟演讲稿.md
+docs/UltraStudio_技术分享演说稿.md
+docs/demo-script.md
+docs/sample-cases.md
+docs/submission-guide.md
+
+# Generated Tauri schemas
+src-tauri/gen/
+
+# Generated reports
+CODE_LINES_REPORT.md
+
+# Local model weights
+lora/**/*.safetensors
+lora/**/*.pt
+lora/**/*.ckpt
+
+# Submission/test materials
+UltraStudio_提交材料_*/
+UltraStudio_鎻愰氦鏉愭枡_*/
+测试集/
+
+# Temporary files
+*.log
+*.tmp
+*.bak

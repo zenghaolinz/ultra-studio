@@ -1,0 +1,36 @@
+{
+  "name": "ultra-studio",
+  "version": "0.6.10",
+  "description": "Ultra Studio - Agent Chat + 3D Asset Generator",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "sidecar:check": "python -m compileall -q sidecar scripts && python -c \"import sidecar.__main__\" && python -m unittest discover -s sidecar/tests -p \"test_*.py\"",
+    "check": "npm run typecheck && npm run sidecar:check",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.120.0",
+    "@react-three/fiber": "^8.18.0",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "^0.171.0",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/three": "^0.171.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  }
+}

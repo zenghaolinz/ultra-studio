@@ -1,0 +1,126 @@
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+from sidecar.services import generation_runtime
+
+
+class GenerationRuntimeTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        state = generation_runtime.generation_queue_state()
+        self.assertEqual(state["active"], 0)
+        self.assertEqual(state["waiting"], 0)
+
+    def test_external_profile_requires_manual_start(self) -> None:
+        status = {
+            "running": False,
+            "ready": False,
+            "launch_mode": "external",
+            "configured_path": "E:/ComfyUI Desktop",
+        }
+        with patch.object(generation_runtime, "get_status", return_value=status), patch.object(
+            generation_runtime,
+            "start_comfyui",
+            side_effect=AssertionError("Desktop/external mode must not auto-start"),
+        ):
+            result = generation_runtime.ensure_comfyui_ready()
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["manual_start_required"])
+        self.assertIn("Desktop", result["message"])
+
+    def test_missing_path_requires_configuration(self) -> None:
+        status = {
+            "running": False,
+            "ready": False,
+            "launch_mode": "portable",
+            "configured_path": "",
+        }
+        with patch.object(generation_runtime, "get_status", return_value=status):
+            result = generation_runtime.ensure_comfyui_ready()
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["manual_start_required"])
+        self.assertIn("尚未配置", result["message"])
+
+    def test_portable_profile_attempts_start(self) -> None:
+        stopped = {
+            "running": False,
+            "ready": False,
+            "launch_mode": "portable",
+            "configured_path": "E:/ComfyUI_windows_portable",
+        }
+        running = {**stopped, "running": True, "ready": True}
+        with patch.object(generation_runtime, "is_valid_comfyui_path", return_value=True), patch.object(
+            generation_runtime,
+            "get_status",
+            side_effect=[stopped, running],
+        ), patch.object(generation_runtime, "start_comfyui", return_value=True) as start:
+            result = generation_runtime.ensure_comfyui_ready(wait_seconds=1)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["started"])
+        start.assert_called_once()
+
+    def test_generation_slot_serializes_work(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        order: list[str] = []
+
+        def first_worker() -> None:
+            with generation_runtime.generation_slot():
+                order.append("first-start")
+                entered.set()
+                release.wait(timeout=2)
+                order.append("first-end")
+
+        def second_worker() -> None:
+            entered.wait(timeout=2)
+            with generation_runtime.generation_slot():
+                order.append("second")
+
+        first = threading.Thread(target=first_worker)
+        second = threading.Thread(target=second_worker)
+        first.start()
+        self.assertTrue(entered.wait(timeout=2))
+        second.start()
+        time.sleep(0.05)
+        state = generation_runtime.generation_queue_state()
+        self.assertEqual(state["active"], 1)
+        self.assertEqual(state["waiting"], 1)
+        release.set()
+        first.join(timeout=2)
+        second.join(timeout=2)
+
+        self.assertEqual(order, ["first-start", "first-end", "second"])
+
+    def test_runtime_state_instances_are_isolated(self) -> None:
+        first_state = generation_runtime.GenerationRuntimeState()
+        second_state = generation_runtime.GenerationRuntimeState()
+
+        with generation_runtime.generation_slot(runtime_state=first_state):
+            first = generation_runtime.generation_queue_state(False, runtime_state=first_state)
+            second = generation_runtime.generation_queue_state(False, runtime_state=second_state)
+
+        self.assertEqual(first["active"], 1)
+        self.assertEqual(second["active"], 0)
+        self.assertEqual(second["waiting"], 0)
+
+    def test_low_gpu_memory_queues_generation(self) -> None:
+        with patch.object(
+            generation_runtime,
+            "gpu_memory_state",
+            return_value={
+                "available": True,
+                "free_mb": 512,
+                "total_mb": 8192,
+                "low_memory": True,
+                "min_free_mb": generation_runtime.MIN_FREE_VRAM_MB,
+            },
+        ):
+            self.assertTrue(generation_runtime.should_queue_generation())
+
+
+if __name__ == "__main__":
+    unittest.main()

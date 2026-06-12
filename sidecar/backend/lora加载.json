@@ -1,0 +1,12 @@
+{
+  "2": {
+    "inputs": {
+      "lora_name": "Flux2-Klein-9B-consistency-V2.safetensors",
+      "strength_model": 1
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  }
+}
