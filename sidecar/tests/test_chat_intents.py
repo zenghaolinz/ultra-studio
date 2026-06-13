@@ -7,8 +7,10 @@ if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
 from services.chat_intents import (
+    has_previous_image_reference,
     is_3d_intent,
     is_folder_summary_to_docx_intent,
+    is_image_correction_intent,
     is_image_3d_intent,
     is_image_edit_intent,
     is_image_generation_intent,
@@ -56,6 +58,9 @@ class ChatIntentsTests(unittest.TestCase):
         self.assertTrue(is_previous_image_edit_intent("我想要的是一只白色的狗"))
         self.assertTrue(is_previous_image_edit_intent("我是要第一只狗变白色"))
         self.assertFalse(is_previous_image_edit_intent("重新画一张图"))
+        self.assertTrue(has_previous_image_reference("我是要第一只狗变白色"))
+        self.assertFalse(has_previous_image_reference("我想要的是一只白色的狗"))
+        self.assertTrue(is_image_correction_intent("我想要的是一只白色的狗"))
         self.assertTrue(is_modify_previous_3d_intent("把刚才这个改成白色"))
         self.assertFalse(is_modify_previous_3d_intent("重新做一个新模型"))
 

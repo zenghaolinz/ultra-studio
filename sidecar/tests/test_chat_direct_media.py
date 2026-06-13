@@ -60,6 +60,47 @@ class ChatDirectMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["tool"], "edit_image")
         modify.assert_called_once()
 
+    async def test_run_direct_image_request_does_not_project_fallback_for_correction_without_active_image(self) -> None:
+        with (
+            patch("services.chat_direct_media.find_latest_edit_source_image") as latest,
+            patch("services.chat_direct_media.project_image_paths") as project_images,
+            patch("services.chat_direct_media.memory_mgr.handle_modify_image") as modify,
+        ):
+            latest.return_value = None
+            project_images.return_value = ["project.png"]
+
+            result = await run_direct_image_request(
+                "\u6211\u60f3\u8981\u7684\u662f\u4e00\u53ea\u767d\u8272\u7684\u72d7",
+                None,
+                "conversation-1",
+                "project",
+            )
+
+        self.assertIsNone(result)
+        project_images.assert_not_called()
+        modify.assert_not_called()
+
+    async def test_run_direct_image_request_allows_project_fallback_for_explicit_reference(self) -> None:
+        with (
+            patch("services.chat_direct_media.find_latest_edit_source_image") as latest,
+            patch("services.chat_direct_media.project_image_paths") as project_images,
+            patch("services.chat_direct_media.memory_mgr.handle_modify_image") as modify,
+        ):
+            latest.return_value = None
+            project_images.return_value = ["project.png"]
+            modify.return_value = {"status": "success", "improved_image_path": "out.png"}
+
+            result = await run_direct_image_request(
+                "\u6211\u662f\u8981\u7b2c\u4e00\u53ea\u72d7\u53d8\u767d\u8272",
+                None,
+                "conversation-1",
+                "project",
+            )
+
+        self.assertEqual(result["tool"], "edit_image")
+        project_images.assert_called_once()
+        modify.assert_called_once_with("project.png", "\u6211\u662f\u8981\u7b2c\u4e00\u53ea\u72d7\u53d8\u767d\u8272")
+
     async def test_run_direct_3d_request_generates_from_text(self) -> None:
         with patch("services.chat_direct_media.memory_mgr.handle_generate_3d_from_text") as generate:
             generate.return_value = {"status": "success", "model_path": "out.glb"}

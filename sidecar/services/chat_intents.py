@@ -175,11 +175,8 @@ def is_image_edit_intent(content: str, image_paths: list[str] | None = None) -> 
     return any(word in text for word in edit_words)
 
 
-def is_previous_image_edit_intent(content: str) -> bool:
+def has_previous_image_reference(content: str) -> bool:
     text = (content or "").lower()
-    blocked_words = ["全新", "新的图片", "重新画一张", "不要基于", "不基于", "从零"]
-    if any(word in text for word in blocked_words):
-        return False
     previous_words = [
         "上一张",
         "上张",
@@ -199,6 +196,11 @@ def is_previous_image_edit_intent(content: str) -> bool:
         "图片",
         "图中",
     ]
+    return any(word in text for word in previous_words)
+
+
+def is_image_correction_intent(content: str) -> bool:
+    text = (content or "").lower()
     edit_words = [
         "完整呈现",
         "呈现完整",
@@ -256,13 +258,67 @@ def is_previous_image_edit_intent(content: str) -> bool:
         "要的是",
         "想要的是",
     ]
-    has_previous_ref = any(word in text for word in previous_words)
     has_explicit_edit = any(word in text for word in edit_words)
     has_attribute_change = any(word in text for word in attribute_words)
     has_correction = any(word in text for word in correction_words)
-    return (has_previous_ref and (has_explicit_edit or has_attribute_change)) or (
-        has_correction and has_attribute_change
-    )
+    return has_correction and has_attribute_change
+
+
+def is_previous_image_edit_intent(content: str) -> bool:
+    text = (content or "").lower()
+    blocked_words = ["全新", "新的图片", "重新画一张", "不要基于", "不基于", "从零"]
+    if any(word in text for word in blocked_words):
+        return False
+    has_previous_ref = has_previous_image_reference(text)
+    has_correction = is_image_correction_intent(text)
+    previous_change_words = [
+        "完整呈现",
+        "呈现完整",
+        "画完整",
+        "补全",
+        "扩图",
+        "补全图片",
+        "画面完整",
+        "改图",
+        "编辑图片",
+        "修改图片",
+        "润色",
+        "增强",
+        "优化",
+        "改成",
+        "换成",
+        "变成",
+        "变",
+        "白色",
+        "黑色",
+        "红色",
+        "蓝色",
+        "绿色",
+        "黄色",
+        "棕色",
+        "金色",
+        "灰色",
+        "可爱",
+        "毛茸茸",
+        "小狗",
+        "狗",
+        "小猫",
+        "猫",
+        "兔子",
+        "white",
+        "black",
+        "red",
+        "blue",
+        "green",
+        "yellow",
+        "brown",
+        "dog",
+        "cat",
+        "rabbit",
+    ]
+    if has_previous_ref:
+        return any(word in text for word in previous_change_words)
+    return has_correction
 
 
 def is_modify_previous_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:
