@@ -34,6 +34,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - Chat direct image/3D generation flows: `sidecar/services/chat_direct_media.py`
   - Chat document-to-image/3D asset flows: `sidecar/services/chat_document_assets.py`
+  - Chat folder-to-docx summary flow: `sidecar/services/chat_folder_summary.py`
   - Chat textual/DSML tool execution helpers: `sidecar/services/chat_textual_tools.py`
   - Chat visual prompt helpers: `sidecar/services/chat_visual_prompts.py`
   - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
@@ -137,6 +138,7 @@ Likely disposable tables:
 - Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
 - Keep direct image/3D generation and previous-asset media modification flows out of `sidecar/routes/chat.py`; use `sidecar/services/chat_direct_media.py` for these small ComfyUI dispatch paths.
 - Keep document-to-image/3D asset intent detection, prompt building, and generation dispatch out of `sidecar/routes/chat.py`; use `sidecar/services/chat_document_assets.py`.
+- Keep folder-to-docx summary orchestration out of `sidecar/routes/chat.py`; use `sidecar/services/chat_folder_summary.py`.
 - Keep DSML/textual tool parsing and execution out of `sidecar/routes/chat.py`; use `sidecar/services/textual_tool_parser.py` for parsing only, and `sidecar/services/chat_textual_tools.py` for textual tool dispatch and answer synthesis.
 - SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
 - Run `npm run check` after frontend changes and `cargo check --manifest-path src-tauri/Cargo.toml` after Tauri command changes.
