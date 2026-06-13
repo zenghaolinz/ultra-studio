@@ -27,6 +27,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat provider client lookup/creation: `sidecar/services/chat_provider_client.py`
   - Chat project file candidate scanners: `sidecar/services/chat_project_files.py`
   - Chat project context helpers: `sidecar/services/chat_projects.py`
+  - Chat conversation artifact indexing/resolution: `sidecar/services/chat_artifacts.py`
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
   - Chat router context gathering and trace block helpers: `sidecar/services/chat_router_context.py`
   - Chat routed result formatting/context injection helpers: `sidecar/services/chat_router_results.py`
@@ -132,6 +133,7 @@ Likely disposable tables:
 - Keep chat provider config lookup and `AsyncOpenAI` client construction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_provider_client.py`.
 - Keep project document/image/file candidate scanning out of `sidecar/routes/chat.py`; use `sidecar/services/chat_project_files.py` for fuzzy matching files under the current project root.
 - Keep project path lookup, project-context injection text, and open-folder request handling out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
+- Keep conversation artifact reference parsing out of `sidecar/routes/chat.py`; use `sidecar/services/chat_artifacts.py` for generic image/file/document/code/model/video artifact markers, history scanning, ordinal references like "second image", and semantic references like "yellow dog". Do not add one-off keyword branches for a single asset type when the same behavior should generalize to files and other artifacts.
 - Keep router constants, safe JSON parsing, model-capability inference, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`.
 - Keep router context gathering and agent trace block rendering out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_context.py`. Router action execution can stay in chat until those dependencies are split further.
 - Keep routed-result formatting and post-route media context injection out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_results.py`.

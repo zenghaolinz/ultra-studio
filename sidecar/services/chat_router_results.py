@@ -3,6 +3,7 @@ from routes.direct_files import (
     format_implementation_choice_card,
     format_text_file_create_response,
 )
+from services.chat_artifacts import inject_artifacts_from_result
 from services.chat_generation_context import inject_3d_context, inject_image_context
 from services.chat_response_formatters import (
     format_3d_response,
@@ -43,6 +44,7 @@ async def inject_router_context(conversation_id: str, routed_result: dict | str 
     if not isinstance(routed_result, dict) or "tool" not in routed_result:
         return
     result = routed_result.get("result") or {}
+    await inject_artifacts_from_result(conversation_id, result)
     if routed_result["tool"] in {"generate_image", "edit_image", "generate_multiview_images_from_image"}:
         await inject_image_context(conversation_id, result)
     elif routed_result["tool"] in THREE_D_TOOL_NAMES:

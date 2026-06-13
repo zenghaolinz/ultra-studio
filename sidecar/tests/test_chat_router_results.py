@@ -61,6 +61,7 @@ class ChatRouterResultsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_inject_router_context_dispatches_media_results(self) -> None:
         with (
+            patch("services.chat_router_results.inject_artifacts_from_result", new_callable=AsyncMock) as artifacts,
             patch("services.chat_router_results.inject_image_context", new_callable=AsyncMock) as image,
             patch("services.chat_router_results.inject_3d_context", new_callable=AsyncMock) as model,
         ):
@@ -71,6 +72,7 @@ class ChatRouterResultsTests(unittest.IsolatedAsyncioTestCase):
             )
             await inject_router_context("conversation-1", "plain text")
 
+        self.assertEqual(artifacts.await_count, 2)
         image.assert_awaited_once_with("conversation-1", {"image_path": "out.png"})
         model.assert_awaited_once_with("conversation-1", {"model_path": "out.glb"})
 

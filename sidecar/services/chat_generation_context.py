@@ -4,6 +4,11 @@ from dataclasses import dataclass
 
 from db.sqlite import get_db
 from memory import stm as memory_stm
+from services.chat_artifacts import (
+    Artifact,
+    extract_artifacts_from_content,
+    inject_artifacts_context,
+)
 from services.chat_paths import IMAGE_EXTENSIONS
 
 
@@ -92,6 +97,10 @@ async def inject_request_image_context(conversation_id: str, image_paths: list[s
         conversation_id,
         "\n".join(f'[System Context: 活跃图像路径="{path}"]' for path in paths[:4]),
     )
+    await inject_artifacts_context(
+        conversation_id,
+        [Artifact(kind="image", path=path, label="request_image") for path in paths[:4]],
+    )
 
 
 async def inject_image_context(conversation_id: str, result: dict):
@@ -118,6 +127,7 @@ async def inject_image_context(conversation_id: str, result: dict):
             "\n".join(
                 [
                     f'[System Context: 活跃图像路径="{image_path}"]',
+                    f'[Artifact: kind="image" path="{image_path}" prompt="{prompt}"]',
                     f'[Image Asset: path="{image_path}" prompt="{prompt}"]',
                 ]
             ),
@@ -156,6 +166,15 @@ async def list_recent_image_assets(conversation_id: str, limit: int = 80) -> lis
                 continue
             seen.add(key)
             assets.append(asset)
+    for row in rows:
+        for artifact in extract_artifacts_from_content(_row_content(row)):
+            if artifact.kind != "image":
+                continue
+            key = artifact.path.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            assets.append(ImageAsset(path=artifact.path, prompt=artifact.prompt, context=artifact.context))
     return assets
 
 

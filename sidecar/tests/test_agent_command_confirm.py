@@ -141,6 +141,41 @@ class AgentCommandConfirmTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("opponent", target.read_text(encoding="utf-8"))
             self.assertEqual(list(Path(temp_dir).glob("*.html")), [target])
 
+    async def test_direct_text_file_edit_resolves_referenced_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = Path(temp_dir) / "first.html"
+            second = Path(temp_dir) / "second.html"
+            first.write_text("<html><body>first</body></html>", encoding="utf-8")
+            second.write_text("<html><body>second</body></html>", encoding="utf-8")
+            client = AsyncMock()
+            client.chat.completions.create.return_value.choices = [
+                type(
+                    "Choice",
+                    (),
+                    {
+                        "message": type(
+                            "Message",
+                            (),
+                            {"content": '{"content":"<html><body>second updated</body></html>"}'},
+                        )()
+                    },
+                )()
+            ]
+            db = AsyncMock()
+            db.execute_fetchall.return_value = [
+                (f'[Artifact: kind="code" path="{first}" label="first html"]',),
+                (f'[Artifact: kind="code" path="{second}" label="second html"]',),
+            ]
+            req = ChatRequest(conversation_id="conversation", content="修改第二个 html 文件，把正文改成 updated")
+
+            with patch("services.chat_artifacts.get_db", new=AsyncMock(return_value=db)):
+                result = await _run_direct_text_file_edit(req, client, "model")
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["path"], str(second.resolve()))
+            self.assertIn("updated", second.read_text(encoding="utf-8"))
+            self.assertIn("first", first.read_text(encoding="utf-8"))
+
     def test_executes_textual_edit_tool_call_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "snake.html"

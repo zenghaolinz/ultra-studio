@@ -6,6 +6,7 @@ from pathlib import Path
 from db.sqlite import get_db
 from memory import manager as memory_mgr
 from schemas import ChatRequest
+from services.chat_artifacts import resolve_referenced_artifact
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 DOCUMENT_EXTENSIONS = {
@@ -468,6 +469,11 @@ async def find_latest_text_file_path(conversation_id: str) -> str | None:
     return fallback
 
 
+async def find_referenced_text_file_path(conversation_id: str, content: str) -> str | None:
+    artifact = await resolve_referenced_artifact(conversation_id, content, kinds={"code", "text"})
+    return artifact.path if artifact else None
+
+
 def _wants_no_backup(content: str) -> bool:
     text = (content or "").lower()
     return any(word in text for word in ["删除备份", "不要备份", "不保留备份", "清理备份"])
@@ -485,6 +491,8 @@ async def run_direct_text_file_edit(req: ChatRequest, client, model_name: str) -
         return None
 
     target_path = extract_explicit_text_file_path(req.content)
+    if not target_path:
+        target_path = await find_referenced_text_file_path(req.conversation_id, req.content)
     if not target_path:
         target_path = await find_latest_text_file_path(req.conversation_id)
     if not target_path or not is_text_file_edit_followup_intent(req.content):
