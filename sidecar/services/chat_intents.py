@@ -180,7 +180,25 @@ def is_previous_image_edit_intent(content: str) -> bool:
     blocked_words = ["全新", "新的图片", "重新画一张", "不要基于", "不基于", "从零"]
     if any(word in text for word in blocked_words):
         return False
-    previous_words = ["上一张", "上张", "刚才", "刚刚", "这张", "这个", "它", "他", "图片", "图中"]
+    previous_words = [
+        "上一张",
+        "上张",
+        "第一张",
+        "第一只",
+        "第一幅",
+        "第一個",
+        "第一个",
+        "刚才",
+        "刚刚",
+        "这张",
+        "这个",
+        "这只",
+        "那只",
+        "它",
+        "他",
+        "图片",
+        "图中",
+    ]
     edit_words = [
         "完整呈现",
         "呈现完整",
@@ -197,8 +215,54 @@ def is_previous_image_edit_intent(content: str) -> bool:
         "优化",
         "改成",
         "换成",
+        "变成",
+        "变",
     ]
-    return any(word in text for word in previous_words) and any(word in text for word in edit_words)
+    attribute_words = [
+        "白色",
+        "黑色",
+        "红色",
+        "蓝色",
+        "绿色",
+        "黄色",
+        "棕色",
+        "金色",
+        "灰色",
+        "可爱",
+        "毛茸茸",
+        "小狗",
+        "狗",
+        "小猫",
+        "猫",
+        "兔子",
+        "white",
+        "black",
+        "red",
+        "blue",
+        "green",
+        "yellow",
+        "brown",
+        "dog",
+        "cat",
+        "rabbit",
+    ]
+    correction_words = [
+        "我想要的是",
+        "我要的是",
+        "我是要",
+        "我想要的其实是",
+        "不是",
+        "应该是",
+        "要的是",
+        "想要的是",
+    ]
+    has_previous_ref = any(word in text for word in previous_words)
+    has_explicit_edit = any(word in text for word in edit_words)
+    has_attribute_change = any(word in text for word in attribute_words)
+    has_correction = any(word in text for word in correction_words)
+    return (has_previous_ref and (has_explicit_edit or has_attribute_change)) or (
+        has_correction and has_attribute_change
+    )
 
 
 def is_modify_previous_3d_intent(content: str, image_paths: list[str] | None = None) -> bool:

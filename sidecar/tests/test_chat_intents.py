@@ -53,6 +53,8 @@ class ChatIntentsTests(unittest.TestCase):
 
     def test_detects_previous_asset_edit_intents(self) -> None:
         self.assertTrue(is_previous_image_edit_intent("把上一张图补全"))
+        self.assertTrue(is_previous_image_edit_intent("我想要的是一只白色的狗"))
+        self.assertTrue(is_previous_image_edit_intent("我是要第一只狗变白色"))
         self.assertFalse(is_previous_image_edit_intent("重新画一张图"))
         self.assertTrue(is_modify_previous_3d_intent("把刚才这个改成白色"))
         self.assertFalse(is_modify_previous_3d_intent("重新做一个新模型"))
