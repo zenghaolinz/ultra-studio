@@ -2,7 +2,7 @@ import asyncio
 import os
 
 from memory import manager as memory_mgr
-from services.chat_generation_context import find_latest_edit_source_image
+from services.chat_generation_context import find_latest_edit_source_image, resolve_referenced_image_asset
 from services.chat_intents import (
     has_previous_image_reference,
     is_3d_intent,
@@ -36,8 +36,10 @@ async def run_direct_image_request(
         return {"tool": "edit_image", "result": result}
 
     if conversation_id and is_previous_image_edit_intent(content):
-        source = await find_latest_edit_source_image(conversation_id)
         explicit_reference = has_previous_image_reference(content)
+        source = await resolve_referenced_image_asset(conversation_id, content)
+        if not source:
+            source = await find_latest_edit_source_image(conversation_id)
         if not source and explicit_reference:
             project_images = project_image_paths(project_path, content, limit=1)
             source = os.path.normpath(project_images[0]) if project_images else None

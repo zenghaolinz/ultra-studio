@@ -57,6 +57,42 @@ class ChatGenerationContextTests(unittest.IsolatedAsyncioTestCase):
                     str(image_path),
                 )
 
+    async def test_resolve_referenced_image_asset_by_ordinal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = Path(temp_dir) / "yellow-dog.png"
+            second = Path(temp_dir) / "white-cat.png"
+            first.write_text("x", encoding="utf-8")
+            second.write_text("x", encoding="utf-8")
+            db = AsyncMock()
+            db.execute_fetchall.return_value = [
+                (f'[Image Asset: path="{first}" prompt="yellow dog in grass"]',),
+                (f'[Image Asset: path="{second}" prompt="white cat on sofa"]',),
+            ]
+
+            with patch.object(generation_context, "get_db", new=AsyncMock(return_value=db)):
+                self.assertEqual(
+                    await generation_context.resolve_referenced_image_asset("conversation", "把第二张图变白色"),
+                    str(second),
+                )
+
+    async def test_resolve_referenced_image_asset_by_color_and_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yellow_dog = Path(temp_dir) / "yellow-dog.png"
+            white_cat = Path(temp_dir) / "white-cat.png"
+            yellow_dog.write_text("x", encoding="utf-8")
+            white_cat.write_text("x", encoding="utf-8")
+            db = AsyncMock()
+            db.execute_fetchall.return_value = [
+                (f'[Image Asset: path="{yellow_dog}" prompt="yellow dog in grass"]',),
+                (f'[Image Asset: path="{white_cat}" prompt="white cat on sofa"]',),
+            ]
+
+            with patch.object(generation_context, "get_db", new=AsyncMock(return_value=db)):
+                self.assertEqual(
+                    await generation_context.resolve_referenced_image_asset("conversation", "使用黄色狗的图片"),
+                    str(yellow_dog),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
