@@ -38,6 +38,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat LLM router decision flow: `sidecar/services/chat_llm_router.py`
   - Chat router action execution flow: `sidecar/services/chat_router_actions.py`
   - Chat textual/DSML tool execution helpers: `sidecar/services/chat_textual_tools.py`
+  - Chat OpenAI tool-call loop execution: `sidecar/services/chat_tool_loop.py`
   - Chat visual prompt helpers: `sidecar/services/chat_visual_prompts.py`
   - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
   - Direct file intent helpers and direct file response formatting: `sidecar/routes/direct_files.py`
@@ -144,5 +145,6 @@ Likely disposable tables:
 - Keep LLM router decision prompting/parsing out of `sidecar/routes/chat.py`; use `sidecar/services/chat_llm_router.py`.
 - Keep router action execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_actions.py`.
 - Keep DSML/textual tool parsing and execution out of `sidecar/routes/chat.py`; use `sidecar/services/textual_tool_parser.py` for parsing only, and `sidecar/services/chat_textual_tools.py` for textual tool dispatch and answer synthesis.
+- Keep OpenAI tool-call loop execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_loop.py`.
 - SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
 - Run `npm run check` after frontend changes and `cargo check --manifest-path src-tauri/Cargo.toml` after Tauri command changes.
