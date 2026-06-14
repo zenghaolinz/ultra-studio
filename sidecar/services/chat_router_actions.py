@@ -22,6 +22,7 @@ from services.chat_generation_context import (
 )
 from services.chat_paths import image_attachments
 from services.chat_project_files import project_image_paths
+from services.chat_result_repair import repair_text_create_result
 from services.chat_router import model_capabilities, quality_mode_from_decision
 from services.chat_visual_prompts import build_visual_edit_prompt
 
@@ -46,6 +47,15 @@ async def run_router_action(decision: dict, req: ChatRequest, client, model_name
             force=True,
             prompt_override=prompt,
             provider_config=provider_config,
+        )
+        result, _ = await repair_text_create_result(
+            req,
+            client,
+            model_name,
+            provider_config,
+            result,
+            force=True,
+            prompt_override=prompt,
         )
         return {"tool": "create_text_file", "result": result or {"ok": False, "error": "没有生成可写入的本地文件内容"}}
 

@@ -27,7 +27,10 @@ from routes.direct_files import (
     run_direct_text_file_create as _run_direct_text_file_create,
     run_direct_text_file_edit as _run_direct_text_file_edit,
 )
-from services.chat_result_repair import repair_text_edit_result as _repair_text_edit_result
+from services.chat_result_repair import (
+    repair_text_create_result as _repair_text_create_result,
+    repair_text_edit_result as _repair_text_edit_result,
+)
 from services.chat_response_formatters import (
     format_3d_response as _format_3d_response,
     format_attachment_asset_start as _format_attachment_asset_start,
@@ -601,6 +604,13 @@ async def send_message(req: ChatRequest):
         else await _run_direct_text_file_create(req, client, provider_config[1], provider_config=provider_config)
     )
     if direct_text_file_result:
+        direct_text_file_result, _ = await _repair_text_create_result(
+            req,
+            client,
+            provider_config[1],
+            provider_config,
+            direct_text_file_result,
+        )
         assistant_content = _format_text_file_create_response(direct_text_file_result)
         assistant_content += await _direct_agent_trace_block(
             req,
@@ -1632,7 +1642,16 @@ async def send_message_stream(req: ChatRequest):
     if direct_text_file_result:
         async def direct_text_file_event_generator():
             start_text = "正在创建新文件。\n\n"
-            final_text = _format_text_file_create_response(direct_text_file_result)
+            repaired_text_file_result, repair_record = await _repair_text_create_result(
+                req,
+                client,
+                provider_config[1],
+                provider_config,
+                direct_text_file_result,
+            )
+            if repair_record:
+                yield f"data: {json.dumps({'status': '正在修复文件创建结果'}, ensure_ascii=False)}\n\n"
+            final_text = _format_text_file_create_response(repaired_text_file_result)
             full_content = start_text + final_text
             yield f"data: {json.dumps({'token': start_text}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'token': final_text}, ensure_ascii=False)}\n\n"
@@ -1641,7 +1660,7 @@ async def send_message_stream(req: ChatRequest):
                 provider_config,
                 "create_text_file",
                 "create_text_file",
-                direct_text_file_result,
+                repaired_text_file_result,
                 "matched direct text/html file create request",
                 "none",
             )
