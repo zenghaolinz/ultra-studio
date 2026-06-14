@@ -9,7 +9,7 @@ if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
 from routes.asset_3d import GenerateVideoRequest
-from schemas import ChatRequest, EmbeddingConfigCreate, MemoryRememberRequest
+from schemas import ChatRequest, EmbeddingConfigCreate, MemoryRememberRequest, ModelConfigCreate
 
 
 class SchemaValidationTests(unittest.TestCase):
@@ -23,6 +23,13 @@ class SchemaValidationTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             EmbeddingConfigCreate(provider="openai", model_name="text-embedding", dimensions=8192)
+
+    def test_model_context_window_has_bounds(self) -> None:
+        with self.assertRaises(ValidationError):
+            ModelConfigCreate(provider="openai", model_name="gpt-test", context_window=1024)
+
+        with self.assertRaises(ValidationError):
+            ModelConfigCreate(provider="openai", model_name="gpt-test", context_window=3_000_000)
 
     def test_memory_tags_do_not_share_mutable_defaults(self) -> None:
         first = MemoryRememberRequest(content="first")
@@ -45,4 +52,3 @@ class SchemaValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -39,6 +39,7 @@ class ModelConfigCreate(BaseModel):
     api_key: str = ""
     base_url: str = ""
     is_default: bool = False
+    context_window: Optional[int] = Field(default=None, ge=4096, le=2_000_000)
 
 
 class EmbeddingConfigCreate(BaseModel):

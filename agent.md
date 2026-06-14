@@ -23,6 +23,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat project/attachment document read orchestration: `sidecar/services/chat_document_read.py`
   - Chat generation context injection/history helpers: `sidecar/services/chat_generation_context.py`
   - Chat message persistence helpers: `sidecar/services/chat_messages.py`
+  - Chat model context-window inference and message fitting: `sidecar/services/model_context.py`
   - Chat local path/attachment helpers: `sidecar/services/chat_paths.py`
   - Chat provider client lookup/creation: `sidecar/services/chat_provider_client.py`
   - Chat project file candidate scanners: `sidecar/services/chat_project_files.py`
@@ -128,6 +129,7 @@ Likely disposable tables:
 - Keep deterministic document-to-asset prompt extraction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_asset_prompts.py` for requirement text cleanup and deterministic image/3D fallback prompts.
 - Keep generation context injection and latest generated image/multiview lookup out of `sidecar/routes/chat.py`; use `sidecar/services/chat_generation_context.py` for STM context strings and history scanning.
 - Keep simple chat message persistence out of `sidecar/routes/chat.py`; use `sidecar/services/chat_messages.py` for saving visible/user/assistant messages and removing internal source messages.
+- Keep model context-window inference, token estimation, and message compression out of `sidecar/routes/chat.py`; use `sidecar/services/model_context.py`. New chat model configs should either set `context_window` explicitly or rely on that service's provider/model inference. Always fit messages before LLM calls, especially after tool results are appended.
 - Keep conversation title generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_titles.py`.
 - Keep local path parsing, attachment classification, and path-resolution cards out of `sidecar/routes/chat.py`; use `sidecar/services/chat_paths.py` for extension sets and path helpers.
 - Keep chat provider config lookup and `AsyncOpenAI` client construction out of `sidecar/routes/chat.py`; use `sidecar/services/chat_provider_client.py`.

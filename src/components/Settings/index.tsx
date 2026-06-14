@@ -37,6 +37,7 @@ export default function Settings({ onClose }: Props) {
   const [chatModelName, setChatModelName] = useState("");
   const [chatApiKey, setChatApiKey] = useState("");
   const [chatBaseUrl, setChatBaseUrl] = useState(PROVIDER_PRESETS.openai.baseUrl);
+  const [chatContextWindow, setChatContextWindow] = useState("");
 
   const [embProvider, setEmbProvider] = useState<ProviderType>("openai");
   const [embModelName, setEmbModelName] = useState("");
@@ -214,10 +215,12 @@ export default function Settings({ onClose }: Props) {
           apiKey: chatApiKey,
           baseUrl: chatBaseUrl,
           isDefault: models.length === 0,
+          contextWindow: chatContextWindow.trim() ? Number(chatContextWindow) : null,
         },
       });
       setChatModelName("");
       setChatApiKey("");
+      setChatContextWindow("");
       showToast(text("模型已添加", "Model added"));
       await loadConfigs();
     } catch (e: any) {
@@ -263,6 +266,7 @@ export default function Settings({ onClose }: Props) {
           apiKey: "",
           baseUrl: provider.baseUrl,
           isDefault: models.length === 0,
+          contextWindow: null,
         },
       });
       showToast(text(`${provider.name} 模型已添加`, `${provider.name} model added`));
@@ -388,7 +392,7 @@ export default function Settings({ onClose }: Props) {
             <ConfigRow
               key={m.id}
               title={m.modelName}
-              subtitle={`${PROVIDER_LABELS[m.provider] ?? m.provider}${m.apiKey ? text(" · Key 已保存", " · Key saved") : ""}`}
+              subtitle={`${PROVIDER_LABELS[m.provider] ?? m.provider} · ${m.contextWindow?.toLocaleString() ?? "-"} ctx${m.contextWindowSource === "configured" ? text(" · 手动", " · manual") : text(" · 推断", " · inferred")}${m.apiKey ? text(" · Key 已保存", " · Key saved") : ""}`}
               active={m.isDefault}
               onSetDefault={() => setDefaultModel(m.id)}
               onRemove={() => removeModel(m.id)}
@@ -399,6 +403,15 @@ export default function Settings({ onClose }: Props) {
             <div style={{ fontSize: 13, fontWeight: 780 }}>{text("添加聊天模型", "Add chat model")}</div>
             <ProviderSelect value={chatProvider} onChange={setChatProvider} setBaseUrl={setChatBaseUrl} style={inputStyle} />
             <input style={inputStyle} placeholder={text("模型名称，例如 gpt-4o、deepseek-chat、qwen-max", "Model name, e.g. gpt-4o, deepseek-chat, or qwen-max")} value={chatModelName} onChange={(e) => setChatModelName(e.target.value)} />
+            <input
+              style={inputStyle}
+              type="number"
+              min={4096}
+              step={1024}
+              placeholder={text("上下文长度，可留空自动推断，例如 32768", "Context window, optional, e.g. 32768")}
+              value={chatContextWindow}
+              onChange={(e) => setChatContextWindow(e.target.value)}
+            />
             <input style={inputStyle} type="password" placeholder={text("API Key，本地模型可留空", "API Key, optional for local models")} value={chatApiKey} onChange={(e) => setChatApiKey(e.target.value)} />
             <input style={inputStyle} placeholder="Base URL" value={chatBaseUrl} onChange={(e) => setChatBaseUrl(e.target.value)} />
             <button className="primary-button" onClick={addModel} style={{ height: 36 }}>

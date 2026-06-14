@@ -2,6 +2,7 @@ import json
 
 from memory import manager as memory_mgr
 from services.chat_response_formatters import format_textual_tool_direct_response
+from services.model_context import fit_messages_to_context
 from services.textual_tool_parser import (
     SUPPORTED_TEXTUAL_TOOL_NAMES,
     extract_textual_tool_calls,
@@ -84,24 +85,31 @@ def run_textual_tool_call(content: str) -> tuple[str, dict] | None:
     return None
 
 
-async def answer_from_textual_tool_results(client, model_name: str, messages: list, user_content: str, tool_results: list[dict]) -> str:
+async def answer_from_textual_tool_results(
+    client,
+    model_name: str,
+    messages: list,
+    user_content: str,
+    tool_results: list[dict],
+    provider_config=None,
+) -> str:
     direct_tools = {"edit_text_file", "write_many_files"}
     if any(item.get("tool") in direct_tools for item in tool_results):
         return format_textual_tool_direct_response(tool_results)
     tool_payload = json.dumps(tool_results, ensure_ascii=False)[:30000]
+    response_messages = messages + [
+        {
+            "role": "system",
+            "content": (
+                "上一条 assistant 内容包含文本化 DSML 工具调用，系统已代为执行。"
+                "请基于下面工具结果直接回答用户原始问题。不要输出 DSML、XML、JSON 或工具调用语法；"
+                "如果结果来自网页，请用中文总结并保留关键来源名称或链接。"
+                f"\n\n用户原始问题：{user_content}\n\n工具结果：{tool_payload}"
+            ),
+        }
+    ]
     response = await client.chat.completions.create(
         model=model_name,
-        messages=messages
-        + [
-            {
-                "role": "system",
-                "content": (
-                    "上一条 assistant 内容包含文本化 DSML 工具调用，系统已代为执行。"
-                    "请基于下面工具结果直接回答用户原始问题。不要输出 DSML、XML、JSON 或工具调用语法；"
-                    "如果结果来自网页，请用中文总结并保留关键来源名称或链接。"
-                    f"\n\n用户原始问题：{user_content}\n\n工具结果：{tool_payload}"
-                ),
-            }
-        ],
+        messages=fit_messages_to_context(response_messages, provider_config or ("", model_name, "", "", None)),
     )
     return (response.choices[0].message.content or "").strip() or format_textual_tool_direct_response(tool_results)

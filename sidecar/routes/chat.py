@@ -147,6 +147,7 @@ from services.chat_project_files import (
     project_document_paths as _project_document_paths,
 )
 from services.chat_documents import read_document_attachments as _read_document_attachments
+from services.model_context import fit_messages_to_context as _fit_messages_to_context
 
 router = APIRouter()
 
@@ -723,6 +724,7 @@ async def send_message(req: ChatRequest):
         tools = []
 
     messages = context_messages
+    messages = _fit_messages_to_context(messages, provider_config, tools)
 
     if tools:
         messages, tool_results, saved_memories = await _run_tool_calls(
@@ -733,6 +735,7 @@ async def send_message(req: ChatRequest):
             req.conversation_id,
             req.permission_mode,
             _is_delete_request_text(req.content),
+            provider_config=provider_config,
         )
     else:
         tool_results = []
@@ -896,7 +899,7 @@ async def send_message(req: ChatRequest):
         try:
             response = await client.chat.completions.create(
                 model=provider_config[1],
-                messages=messages,
+                messages=_fit_messages_to_context(messages, provider_config),
             )
             assistant_content = response.choices[0].message.content
             textual_tool_results = _run_textual_tool_calls(assistant_content or "")
@@ -907,6 +910,7 @@ async def send_message(req: ChatRequest):
                     messages,
                     req.content,
                     textual_tool_results,
+                    provider_config,
                 )
                 trace_result = {
                     "tool_count": len(textual_tool_results),
@@ -1783,7 +1787,7 @@ async def send_message_stream(req: ChatRequest):
 
     async def event_generator():
         full_content = ""
-        messages = context_messages
+        messages = _fit_messages_to_context(context_messages, provider_config, tools)
         saved_memories = []
         try:
             if tools:
@@ -1818,6 +1822,7 @@ async def send_message_stream(req: ChatRequest):
                         req.permission_mode,
                         _is_delete_request_text(req.content),
                         report_tool_start,
+                        provider_config=provider_config,
                     )
                 )
                 while not tool_task.done() or not tool_status_queue.empty():
@@ -2020,7 +2025,7 @@ async def send_message_stream(req: ChatRequest):
 
             stream = await client.chat.completions.create(
                 model=provider_config[1],
-                messages=messages,
+                messages=_fit_messages_to_context(messages, provider_config),
                 stream=True,
             )
             buffered_text = ""
@@ -2070,6 +2075,7 @@ async def send_message_stream(req: ChatRequest):
                 messages,
                 req.content,
                 textual_tool_results,
+                provider_config,
             )
             trace_result = {
                 "tool_count": len(textual_tool_results),

@@ -5,6 +5,7 @@ from pathlib import Path
 from memory import manager as memory_mgr
 from memory import stm as memory_stm
 from services.chat_generation_context import inject_3d_context, inject_image_context
+from services.model_context import fit_messages_to_context
 from services.chat_tool_results import first_tool_result
 
 
@@ -20,10 +21,12 @@ async def run_tool_calls(
     permission_mode: str = "standard",
     force_file_action: bool = False,
     status_callback=None,
+    provider_config=None,
 ):
     saved_memories = []
     tool_results = []
     read_file_paths: set[str] = set()
+    context_provider_config = provider_config or ("", model_name, "", "", None)
     for _ in range(MAX_TOOL_CALL_ROUNDS):
         if force_file_action and not first_tool_result(tool_results, "delete_file"):
             messages.append({
@@ -36,7 +39,7 @@ async def run_tool_calls(
             })
         response = await client.chat.completions.create(
             model=model_name,
-            messages=messages,
+            messages=fit_messages_to_context(messages, context_provider_config, tools),
             tools=tools,
             tool_choice="auto",
         )
@@ -663,4 +666,3 @@ async def run_tool_calls(
                 )
 
     return messages, tool_results, saved_memories
-

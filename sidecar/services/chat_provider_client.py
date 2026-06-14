@@ -5,16 +5,16 @@ async def get_provider_client(db, model_id: str | None = None):
     config_row = []
     if model_id:
         config_row = await db.execute_fetchall(
-            "SELECT provider, model_name, api_key, base_url FROM model_configs WHERE id = ? LIMIT 1",
+            "SELECT provider, model_name, api_key, base_url, context_window FROM model_configs WHERE id = ? LIMIT 1",
             (model_id,),
         )
     if not config_row:
         config_row = await db.execute_fetchall(
-            "SELECT provider, model_name, api_key, base_url FROM model_configs WHERE is_default = 1 LIMIT 1"
+            "SELECT provider, model_name, api_key, base_url, context_window FROM model_configs WHERE is_default = 1 LIMIT 1"
         )
     if not config_row:
         config_row = await db.execute_fetchall(
-            "SELECT provider, model_name, api_key, base_url FROM model_configs ORDER BY created_at DESC LIMIT 1"
+            "SELECT provider, model_name, api_key, base_url, context_window FROM model_configs ORDER BY created_at DESC LIMIT 1"
         )
     if not config_row:
         return None, None

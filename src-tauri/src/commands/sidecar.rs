@@ -118,6 +118,10 @@ pub struct ModelConfig {
     pub base_url: String,
     #[serde(rename = "isDefault")]
     pub is_default: bool,
+    #[serde(rename = "contextWindow", default)]
+    pub context_window: Option<i32>,
+    #[serde(rename = "contextWindowSource", default)]
+    pub context_window_source: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -694,6 +698,7 @@ pub async fn add_model_config(state: State<'_, SidecarState>, config: ModelConfi
         "api_key": config.api_key,
         "base_url": config.base_url,
         "is_default": config.is_default,
+        "context_window": config.context_window,
     });
     let resp = client
         .post(format!("{}/api/config/models", SIDECAR_URL))

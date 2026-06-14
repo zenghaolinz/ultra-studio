@@ -45,6 +45,7 @@ CREATE_STATEMENTS = [
     api_key TEXT DEFAULT '',
     base_url TEXT DEFAULT '',
     is_default INTEGER DEFAULT 0,
+    context_window INTEGER DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )""",
     """CREATE TABLE IF NOT EXISTS embedding_configs (
@@ -153,6 +154,10 @@ MIGRATIONS_GENERATION_TASK_STATUS_CHECK = [
     "DROP TABLE generation_tasks_old",
 ]
 
+MIGRATIONS_MODEL_CONTEXT_WINDOW = [
+    "ALTER TABLE model_configs ADD COLUMN context_window INTEGER DEFAULT NULL",
+]
+
 
 async def _run_statements(conn: aiosqlite.Connection, statements: list[str]):
     for stmt in statements:
@@ -211,6 +216,12 @@ async def _migrate():
         if "queued" not in table_sql:
             print("[db] Running migration: widening generation_tasks status check")
             await _run_statements(conn, MIGRATIONS_GENERATION_TASK_STATUS_CHECK)
+
+        cursor = await conn.execute("PRAGMA table_info(model_configs)")
+        cols = [row[1] async for row in cursor]
+        if "context_window" not in cols:
+            print("[db] Running migration: adding context_window to model_configs")
+            await _run_statements(conn, MIGRATIONS_MODEL_CONTEXT_WINDOW)
 
         await _run_statements(conn, POST_MIGRATION_STATEMENTS)
         await conn.commit()

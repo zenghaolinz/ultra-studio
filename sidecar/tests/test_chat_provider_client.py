@@ -22,7 +22,7 @@ class FakeDb:
 
 class ChatProviderClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_get_provider_client_prefers_explicit_model(self) -> None:
-        db = FakeDb([[("openai", "gpt-test", "sk-test", "https://api.example")]])
+        db = FakeDb([[("openai", "gpt-test", "sk-test", "https://api.example", 128000)]])
 
         with patch("services.chat_provider_client.AsyncOpenAI") as client_cls:
             client_cls.return_value = object()
@@ -30,12 +30,12 @@ class ChatProviderClientTests(unittest.IsolatedAsyncioTestCase):
             client, provider_config = await get_provider_client(db, "model-1")
 
         self.assertIs(client, client_cls.return_value)
-        self.assertEqual(provider_config, ("openai", "gpt-test", "sk-test", "https://api.example"))
+        self.assertEqual(provider_config, ("openai", "gpt-test", "sk-test", "https://api.example", 128000))
         self.assertEqual(db.calls[0][1], ("model-1",))
         client_cls.assert_called_once_with(api_key="sk-test", base_url="https://api.example")
 
     async def test_get_provider_client_falls_back_to_default_then_latest(self) -> None:
-        db = FakeDb([[], [], [("local", "qwen", "", "http://localhost:1234/v1")]])
+        db = FakeDb([[], [], [("local", "qwen", "", "http://localhost:1234/v1", None)]])
 
         with patch("services.chat_provider_client.AsyncOpenAI") as client_cls:
             client_cls.return_value = object()

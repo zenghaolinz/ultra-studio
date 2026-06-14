@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from db.sqlite import get_db
 from db.sqlite import DB_PATH
 from schemas import ModelConfigCreate, EmbeddingConfigCreate
+from services.model_context import context_spec_from_provider_config
 import uuid
 import datetime
 import httpx
@@ -308,10 +309,12 @@ async def detect_local_models():
 async def list_model_configs():
     db = await get_db()
     rows = await db.execute_fetchall(
-        "SELECT id, provider, model_name, api_key, base_url, is_default, created_at FROM model_configs"
+        "SELECT id, provider, model_name, api_key, base_url, is_default, created_at, context_window FROM model_configs"
     )
-    return [
-        {
+    items = []
+    for r in rows:
+        spec = context_spec_from_provider_config((r[1], r[2], r[3], r[4], r[7]))
+        items.append({
             "id": r[0],
             "provider": r[1],
             "modelName": r[2],
@@ -319,9 +322,10 @@ async def list_model_configs():
             "baseUrl": r[4],
             "isDefault": bool(r[5]),
             "createdAt": r[6],
-        }
-        for r in rows
-    ]
+            "contextWindow": spec.context_window,
+            "contextWindowSource": spec.source,
+        })
+    return items
 
 
 @router.post("/models")
@@ -332,7 +336,7 @@ async def add_model_config(req: ModelConfigCreate):
     if req.is_default:
         await db.execute("UPDATE model_configs SET is_default = 0")
     await db.execute(
-        "INSERT INTO model_configs (id, provider, model_name, api_key, base_url, is_default, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO model_configs (id, provider, model_name, api_key, base_url, is_default, context_window, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             model_id,
             req.provider,
@@ -340,6 +344,7 @@ async def add_model_config(req: ModelConfigCreate):
             req.api_key,
             req.base_url,
             int(req.is_default),
+            req.context_window,
             now,
         ),
     )
@@ -351,6 +356,10 @@ async def add_model_config(req: ModelConfigCreate):
         "apiKey": _masked_api_key(req.api_key),
         "baseUrl": req.base_url,
         "isDefault": req.is_default,
+        "contextWindow": context_spec_from_provider_config(
+            (req.provider, req.model_name, req.api_key, req.base_url, req.context_window)
+        ).context_window,
+        "contextWindowSource": "configured" if req.context_window else "inferred",
     }
 
 
@@ -366,7 +375,7 @@ async def remove_model_config(model_id: str):
 async def set_default_model_config(model_id: str):
     db = await get_db()
     rows = await db.execute_fetchall(
-        "SELECT id, provider, model_name, api_key, base_url, is_default, created_at FROM model_configs WHERE id = ?",
+        "SELECT id, provider, model_name, api_key, base_url, is_default, created_at, context_window FROM model_configs WHERE id = ?",
         (model_id,),
     )
     if not rows:
@@ -375,6 +384,7 @@ async def set_default_model_config(model_id: str):
     await db.execute("UPDATE model_configs SET is_default = 1 WHERE id = ?", (model_id,))
     await db.commit()
     r = rows[0]
+    spec = context_spec_from_provider_config((r[1], r[2], r[3], r[4], r[7]))
     return {
         "id": r[0],
         "provider": r[1],
@@ -383,6 +393,8 @@ async def set_default_model_config(model_id: str):
         "baseUrl": r[4],
         "isDefault": True,
         "createdAt": r[6],
+        "contextWindow": spec.context_window,
+        "contextWindowSource": spec.source,
     }
 
 

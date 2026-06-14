@@ -83,6 +83,8 @@ export interface ModelConfig {
   apiKey: string;
   baseUrl: string;
   isDefault: boolean;
+  contextWindow?: number | null;
+  contextWindowSource?: "configured" | "inferred";
 }
 
 export interface EmbeddingConfig {
