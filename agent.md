@@ -32,6 +32,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat router action constants, JSON parsing, and trace payload helpers: `sidecar/services/chat_router.py`
   - Chat router context gathering and trace block helpers: `sidecar/services/chat_router_context.py`
   - Chat routed result formatting/context injection helpers: `sidecar/services/chat_router_results.py`
+  - Chat deterministic result verification helpers: `sidecar/services/chat_result_verifier.py`
   - Chat title generation helpers: `sidecar/services/chat_titles.py`
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
   - Chat direct image/3D generation flows: `sidecar/services/chat_direct_media.py`
@@ -139,6 +140,7 @@ Likely disposable tables:
 - Keep router constants, safe JSON parsing, model-capability inference, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`.
 - Keep router context gathering and agent trace block rendering out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_context.py`. Router action execution can stay in chat until those dependencies are split further.
 - Keep routed-result formatting and post-route media context injection out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_results.py`.
+- Keep deterministic result verification out of `sidecar/routes/chat.py`; use `sidecar/services/chat_result_verifier.py` for structural checks such as output files existing, generation tasks being queued/successful, edit results needing a prior read, and confirmation/path-resolution states. This layer is intentionally deterministic; add LLM semantic evaluators only as a separate bounded retry step.
 - Keep folder document enumeration and direct document attachment reads out of `sidecar/routes/chat.py`; use `sidecar/services/chat_documents.py`.
 - Keep project/attachment document read orchestration out of `sidecar/routes/chat.py`; use `sidecar/services/chat_document_read.py`.
 - Keep image data-url creation and vision edit prompt generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_visual_prompts.py`.

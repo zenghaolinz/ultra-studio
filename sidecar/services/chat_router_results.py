@@ -11,6 +11,7 @@ from services.chat_response_formatters import (
     format_image_response,
     format_video_response,
 )
+from services.chat_result_verifier import verify_routed_result
 from services.chat_tool_results import THREE_D_TOOL_NAMES
 
 
@@ -19,6 +20,9 @@ def format_router_result(routed_result: dict | str | None) -> str | None:
         return None
     if isinstance(routed_result, str):
         return routed_result
+    verification = verify_routed_result(routed_result)
+    if not verification.accepted:
+        return f"任务结果未通过校验：{verification.reason or '结果不完整'}"
     if "tool" in routed_result:
         tool = routed_result["tool"]
         result = routed_result.get("result") or {}

@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -26,15 +27,15 @@ class ChatRouterResultsTests(unittest.IsolatedAsyncioTestCase):
             model.return_value = "3d response"
 
             self.assertEqual(
-                format_router_result({"tool": "generate_image", "result": {"image_path": "out.png"}}),
+                format_router_result({"tool": "generate_image", "result": {"status": "queued", "task_id": "task-1"}}),
                 "image response",
             )
             self.assertEqual(
-                format_router_result({"tool": "generate_video", "result": {"video_path": "out.mp4"}}),
+                format_router_result({"tool": "generate_video", "result": {"status": "queued", "task_id": "video-1"}}),
                 "video response",
             )
             self.assertEqual(
-                format_router_result({"tool": "generate_3d_from_text", "result": {"model_path": "out.glb"}}),
+                format_router_result({"tool": "generate_3d_from_text", "result": {"status": "success", "model_path": "out.glb"}}),
                 "3d response",
             )
 
@@ -43,21 +44,26 @@ class ChatRouterResultsTests(unittest.IsolatedAsyncioTestCase):
         model.assert_called_once()
 
     def test_format_router_result_dispatches_file_and_summary_results(self) -> None:
-        with (
-            patch("services.chat_router_results.format_text_file_create_response") as text_file,
-            patch("services.chat_router_results.format_docx_create_response") as docx,
-            patch("services.chat_router_results.format_folder_summary_response") as folder_summary,
-        ):
-            text_file.return_value = "text file"
-            docx.return_value = "docx"
-            folder_summary.return_value = "summary"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            text_path = Path(temp_dir) / "a.txt"
+            docx_path = Path(temp_dir) / "a.docx"
+            text_path.write_text("hello", encoding="utf-8")
+            docx_path.write_text("doc", encoding="utf-8")
+            with (
+                patch("services.chat_router_results.format_text_file_create_response") as text_file,
+                patch("services.chat_router_results.format_docx_create_response") as docx,
+                patch("services.chat_router_results.format_folder_summary_response") as folder_summary,
+            ):
+                text_file.return_value = "text file"
+                docx.return_value = "docx"
+                folder_summary.return_value = "summary"
 
-            self.assertEqual(
-                format_router_result({"tool": "create_text_file", "result": {"path": "a.txt"}}),
-                "text file",
-            )
-            self.assertEqual(format_router_result({"ok": True, "path": "a.docx"}), "docx")
-            self.assertEqual(format_router_result({"document_count": 2}), "summary")
+                self.assertEqual(
+                    format_router_result({"tool": "create_text_file", "result": {"ok": True, "files": [{"path": str(text_path)}]}}),
+                    "text file",
+                )
+                self.assertEqual(format_router_result({"ok": True, "path": str(docx_path)}), "docx")
+                self.assertEqual(format_router_result({"ok": True, "document_count": 2}), "summary")
 
     async def test_inject_router_context_dispatches_media_results(self) -> None:
         with (

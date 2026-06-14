@@ -7,6 +7,18 @@ THREE_D_TOOL_NAMES = {
 }
 
 
+def _verification_status(tool_name: str, result: dict | None) -> tuple[int, bool]:
+    if not isinstance(result, dict):
+        return (0, False)
+    if result.get("needs_confirmation") or result.get("manual_start_required"):
+        return (2, True)
+    if result.get("needs_read"):
+        return (0, False)
+    if result.get("ok") or result.get("status") in {"success", "queued"}:
+        return (3, True)
+    return (0, False)
+
+
 def first_3d_result(tool_results: list[dict]) -> dict | None:
     for item in tool_results:
         if item.get("tool") in THREE_D_TOOL_NAMES:
@@ -36,6 +48,13 @@ def best_tool_result(tool_results: list[dict], tool_name: str) -> dict | None:
     matches = [item for item in tool_results if item.get("tool") == tool_name]
     if not matches:
         return None
+    ranked = []
+    for index, item in enumerate(matches):
+        score, accepted = _verification_status(tool_name, item.get("result"))
+        ranked.append((score, index, accepted, item))
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    if ranked[0][2]:
+        return ranked[0][3]
     for item in reversed(matches):
         result = item.get("result")
         if isinstance(result, dict) and result.get("ok"):
