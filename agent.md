@@ -36,6 +36,7 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat bounded result repair helpers: `sidecar/services/chat_result_repair.py`
   - Chat title generation helpers: `sidecar/services/chat_titles.py`
   - Chat tool-result selection/output helpers: `sidecar/services/chat_tool_results.py`
+  - Chat tool-call result presentation helpers: `sidecar/services/chat_tool_presentation.py`
   - Chat direct image/3D generation flows: `sidecar/services/chat_direct_media.py`
   - Chat document-to-image/3D asset flows: `sidecar/services/chat_document_assets.py`
   - Chat folder-to-docx summary flow: `sidecar/services/chat_folder_summary.py`
@@ -147,6 +148,7 @@ Likely disposable tables:
 - Keep project/attachment document read orchestration out of `sidecar/routes/chat.py`; use `sidecar/services/chat_document_read.py`.
 - Keep image data-url creation and vision edit prompt generation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_visual_prompts.py`.
 - Keep tool-result selection/dedup helpers out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_results.py` for first/best result selection, ComfyUI manual-start checks, and trace output path extraction.
+- Keep tool-call result presentation out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_presentation.py` to map selected tool results into user-facing text plus trace metadata shared by streaming and non-streaming chat responses.
 - Keep direct image/3D generation and previous-asset media modification flows out of `sidecar/routes/chat.py`; use `sidecar/services/chat_direct_media.py` for these small ComfyUI dispatch paths.
 - Keep document-to-image/3D asset intent detection, prompt building, and generation dispatch out of `sidecar/routes/chat.py`; use `sidecar/services/chat_document_assets.py`.
 - Keep folder-to-docx summary orchestration out of `sidecar/routes/chat.py`; use `sidecar/services/chat_folder_summary.py`.

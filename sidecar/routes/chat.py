@@ -35,7 +35,6 @@ from services.chat_response_formatters import (
     format_3d_response as _format_3d_response,
     format_attachment_asset_start as _format_attachment_asset_start,
     format_command_tool_response as _format_command_tool_response,
-    format_delete_tool_response as _format_delete_tool_response,
     format_folder_summary_response as _format_folder_summary_response,
     format_image_response as _format_image_response,
     format_project_check_response as _format_project_check_response,
@@ -47,11 +46,9 @@ from services.chat_response_formatters import (
 from services.chat_confirmations import (
     extract_confirmed_command as _extract_confirmed_command,
     extract_confirmed_project_check as _extract_confirmed_project_check,
-    extract_delete_continuation as _extract_delete_continuation,
     is_delete_request_text as _is_delete_request_text,
     run_confirmed_command_request as _run_confirmed_command_request,
     run_confirmed_project_check_request as _run_confirmed_project_check_request,
-    with_delete_continuation as _with_delete_continuation,
 )
 from services.chat_delete_flow import run_confirmed_delete_request as _run_confirmed_delete_request
 from services.chat_folder_summary import summarize_folder_documents as _summarize_folder_documents
@@ -78,6 +75,7 @@ from services.chat_textual_tools import (
     run_textual_tool_calls as _run_textual_tool_calls,
 )
 from services.chat_tool_loop import run_tool_calls as _run_tool_calls
+from services.chat_tool_presentation import build_tool_result_presentation as _build_tool_result_presentation
 from services.chat_direct_media import (
     run_direct_3d_request as _run_direct_3d_request,
     run_direct_image_request as _run_direct_image_request,
@@ -788,123 +786,31 @@ async def send_message(req: ChatRequest):
         )
         if source_image:
             three_d_result["result"].setdefault("source_image_path", source_image)
-    if three_d_result:
-        assistant_content = _format_3d_response(
-            three_d_result["tool"], three_d_result["result"]
-        )
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "generate_3d_image",
-            three_d_result["tool"],
-            three_d_result["result"],
-            "LLM tool call produced 3D result",
-            "tool_call",
-            _image_attachments(req.image_paths),
-        )
-    elif multiview_image_result:
-        assistant_content = _format_image_response(
-            multiview_image_result["tool"], multiview_image_result["result"]
-        )
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "generate_multiview_images",
-            multiview_image_result["tool"],
-            multiview_image_result["result"],
-            "LLM tool call produced multiview images",
-            "tool_call",
-            _image_attachments(req.image_paths),
-        )
-    elif generated_image_result:
-        assistant_content = _format_image_response(
-            generated_image_result["tool"], generated_image_result["result"]
-        )
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "generate_image",
-            generated_image_result["tool"],
-            generated_image_result["result"],
-            "LLM tool call produced image result",
-            "tool_call",
-            _image_attachments(req.image_paths),
-        )
-    elif generated_video_result:
-        assistant_content = _format_video_response(generated_video_result["result"])
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "generate_video",
-            generated_video_result["tool"],
-            generated_video_result["result"],
-            "LLM tool call queued video generation",
-            "tool_call",
-            _image_attachments(req.image_paths),
-        )
-    elif delete_result:
-        continuation = _extract_delete_continuation(req.content)
-        if delete_result["result"].get("needs_confirmation") and continuation:
-            delete_result["result"]["message"] = _with_delete_continuation(
-                delete_result["result"].get("message", ""),
-                continuation,
+    presentation = _build_tool_result_presentation(
+        req.content,
+        three_d_result=three_d_result,
+        multiview_image_result=multiview_image_result,
+        generated_image_result=generated_image_result,
+        generated_video_result=generated_video_result,
+        delete_result=delete_result,
+        project_check_result=project_check_result,
+        command_result=command_result,
+        edit_text_result=edit_text_result,
+        write_many_result=write_many_result,
+    )
+    if presentation:
+        assistant_content = presentation.text
+        if presentation.trace_group and presentation.trace_tool and presentation.trace_result is not None:
+            assistant_content += await _direct_agent_trace_block(
+                req,
+                provider_config,
+                presentation.trace_group,
+                presentation.trace_tool,
+                presentation.trace_result,
+                presentation.trace_reason,
+                "tool_call",
+                _image_attachments(req.image_paths) if presentation.include_image_attachments else None,
             )
-        assistant_content = _format_delete_tool_response(delete_result["result"])
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "general_tools",
-            "delete_file",
-            delete_result["result"],
-            "LLM tool call produced delete result",
-            "tool_call",
-        )
-    elif project_check_result:
-        assistant_content = _format_project_check_response(project_check_result["result"])
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "general_tools",
-            "run_project_check",
-            project_check_result["result"],
-            "LLM tool call produced project check result",
-            "tool_call",
-        )
-    elif command_result:
-        assistant_content = _format_command_tool_response(command_result["result"])
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "general_tools",
-            "run_command",
-            command_result["result"],
-            "LLM tool call produced command result",
-            "tool_call",
-        )
-    elif edit_text_result:
-        assistant_content = _format_text_edit_response(edit_text_result["result"])
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "general_tools",
-            "edit_text_file",
-            edit_text_result["result"],
-            "LLM tool call produced text edit result",
-            "tool_call",
-        )
-    elif write_many_result:
-        assistant_content = _format_write_many_files_response(write_many_result["result"])
-        assistant_content += await _direct_agent_trace_block(
-            req,
-            provider_config,
-            "general_tools",
-            "write_many_files",
-            write_many_result["result"],
-            "LLM tool call produced multi-file write result",
-            "tool_call",
-        )
-    elif _is_delete_request_text(req.content):
-        assistant_content = "没有定位到可删除目标。请提供更明确的文件名或完整路径，我会在标准模式下先弹出确认卡片。"
     else:
         try:
             response = await client.chat.completions.create(
@@ -1900,138 +1806,34 @@ async def send_message_stream(req: ChatRequest):
                     )
                     if source_image:
                         three_d_result["result"].setdefault("source_image_path", source_image)
-                if three_d_result:
-                    result_text = _format_3d_response(
-                        three_d_result["tool"], three_d_result["result"]
-                    )
-                elif multiview_image_result:
-                    result_text = _format_image_response(
-                        multiview_image_result["tool"], multiview_image_result["result"]
-                    )
-                elif generated_image_result:
-                    result_text = _format_image_response(
-                        generated_image_result["tool"], generated_image_result["result"]
-                    )
-                elif generated_video_result:
-                    result_text = _format_video_response(generated_video_result["result"])
-                elif delete_result:
-                    continuation = _extract_delete_continuation(req.content)
-                    if delete_result["result"].get("needs_confirmation") and continuation:
-                        delete_result["result"]["message"] = _with_delete_continuation(
-                            delete_result["result"].get("message", ""),
-                            continuation,
-                        )
-                    result_text = _format_delete_tool_response(delete_result["result"])
-                elif project_check_result:
-                    result_text = _format_project_check_response(project_check_result["result"])
-                elif command_result:
-                    result_text = _format_command_tool_response(command_result["result"])
-                elif edit_text_result:
-                    result_text = _format_text_edit_response(edit_text_result["result"])
-                elif write_many_result:
-                    result_text = _format_write_many_files_response(write_many_result["result"])
-                elif _is_delete_request_text(req.content):
-                    result_text = "没有定位到可删除目标。请提供更明确的文件名或完整路径，我会在标准模式下先弹出确认卡片。"
-                else:
-                    result_text = ""
-                if result_text:
+                presentation = _build_tool_result_presentation(
+                    req.content,
+                    three_d_result=three_d_result,
+                    multiview_image_result=multiview_image_result,
+                    generated_image_result=generated_image_result,
+                    generated_video_result=generated_video_result,
+                    delete_result=delete_result,
+                    project_check_result=project_check_result,
+                    command_result=command_result,
+                    edit_text_result=edit_text_result,
+                    write_many_result=write_many_result,
+                )
+                if presentation:
+                    result_text = presentation.text
                     if full_content and not full_content.endswith("\n\n"):
                         full_content += "\n\n"
                     full_content += result_text
                     yield f"data: {json.dumps({'token': result_text}, ensure_ascii=False)}\n\n"
-                    if three_d_result:
+                    if presentation.trace_group and presentation.trace_tool and presentation.trace_result is not None:
                         full_content += await _direct_agent_trace_block(
                             req,
                             provider_config,
-                            "generate_3d_image",
-                            three_d_result["tool"],
-                            three_d_result["result"],
-                            "LLM tool call produced 3D result",
+                            presentation.trace_group,
+                            presentation.trace_tool,
+                            presentation.trace_result,
+                            presentation.trace_reason,
                             "tool_call",
-                            _image_attachments(req.image_paths),
-                        )
-                    elif multiview_image_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "generate_multiview_images",
-                            multiview_image_result["tool"],
-                            multiview_image_result["result"],
-                            "LLM tool call produced multiview images",
-                            "tool_call",
-                            _image_attachments(req.image_paths),
-                        )
-                    elif generated_image_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "generate_image",
-                            generated_image_result["tool"],
-                            generated_image_result["result"],
-                            "LLM tool call produced image result",
-                            "tool_call",
-                            _image_attachments(req.image_paths),
-                        )
-                    elif generated_video_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "generate_video",
-                            generated_video_result["tool"],
-                            generated_video_result["result"],
-                            "LLM tool call queued video generation",
-                            "tool_call",
-                            _image_attachments(req.image_paths),
-                        )
-                    elif delete_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "general_tools",
-                            "delete_file",
-                            delete_result["result"],
-                            "LLM tool call produced delete result",
-                            "tool_call",
-                        )
-                    elif project_check_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "general_tools",
-                            "run_project_check",
-                            project_check_result["result"],
-                            "LLM tool call produced project check result",
-                            "tool_call",
-                        )
-                    elif command_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "general_tools",
-                            "run_command",
-                            command_result["result"],
-                            "LLM tool call produced command result",
-                            "tool_call",
-                        )
-                    elif edit_text_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "general_tools",
-                            "edit_text_file",
-                            edit_text_result["result"],
-                            "LLM tool call produced text edit result",
-                            "tool_call",
-                        )
-                    elif write_many_result:
-                        full_content += await _direct_agent_trace_block(
-                            req,
-                            provider_config,
-                            "general_tools",
-                            "write_many_files",
-                            write_many_result["result"],
-                            "LLM tool call produced multi-file write result",
-                            "tool_call",
+                            _image_attachments(req.image_paths) if presentation.include_image_attachments else None,
                         )
 
                     assistant_id, assistant_now = await _save_assistant_message(
