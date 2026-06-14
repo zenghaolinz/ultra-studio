@@ -342,7 +342,7 @@ async def send_message(req: ChatRequest):
             "savedMemories": [],
         }
 
-    direct_text_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1])
+    direct_text_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1], provider_config)
     if direct_text_edit_result:
         assistant_content = _format_text_edit_response(direct_text_edit_result)
         assistant_content += await _direct_agent_trace_block(
@@ -489,7 +489,7 @@ async def send_message(req: ChatRequest):
     project_document_asset_result = (
         None
         if use_tool_orchestrator
-        else await _run_project_document_asset_request(req, client, provider_config[1])
+        else await _run_project_document_asset_request(req, client, provider_config[1], provider_config)
     )
     if project_document_asset_result:
         if project_document_asset_result["tool"] == "generate_image":
@@ -528,7 +528,7 @@ async def send_message(req: ChatRequest):
     attachment_asset_result = (
         None
         if use_tool_orchestrator
-        else await _run_attachment_asset_request(req, client, provider_config[1])
+        else await _run_attachment_asset_request(req, client, provider_config[1], provider_config)
     )
     if attachment_asset_result:
         if attachment_asset_result["tool"] == "generate_image":
@@ -567,7 +567,7 @@ async def send_message(req: ChatRequest):
     folder_summary_result = (
         None
         if use_tool_orchestrator
-        else await _summarize_folder_documents(req, client, provider_config[1])
+        else await _summarize_folder_documents(req, client, provider_config[1], provider_config)
     )
     if folder_summary_result:
         assistant_content = _format_folder_summary_response(folder_summary_result)
@@ -597,7 +597,7 @@ async def send_message(req: ChatRequest):
     direct_text_file_result = (
         None
         if use_tool_orchestrator
-        else await _run_direct_text_file_create(req, client, provider_config[1])
+        else await _run_direct_text_file_create(req, client, provider_config[1], provider_config=provider_config)
     )
     if direct_text_file_result:
         assistant_content = _format_text_file_create_response(direct_text_file_result)
@@ -626,7 +626,7 @@ async def send_message(req: ChatRequest):
     direct_docx_edit_result = (
         None
         if use_tool_orchestrator
-        else await _run_direct_docx_edit(req, client, provider_config[1])
+        else await _run_direct_docx_edit(req, client, provider_config[1], provider_config)
     )
     if direct_docx_edit_result:
         assistant_content = _format_docx_edit_response(direct_docx_edit_result)
@@ -655,7 +655,7 @@ async def send_message(req: ChatRequest):
     direct_docx_result = (
         None
         if use_tool_orchestrator
-        else await _run_direct_docx_create(req, client, provider_config[1])
+        else await _run_direct_docx_create(req, client, provider_config[1], provider_config)
     )
     if direct_docx_result:
         assistant_content = _format_docx_create_response(direct_docx_result)
@@ -684,7 +684,7 @@ async def send_message(req: ChatRequest):
     direct_doc_response = (
         None
         if use_tool_orchestrator
-        else await _run_direct_document_read(req, client, provider_config[1])
+        else await _run_direct_document_read(req, client, provider_config[1], provider_config)
     )
     if direct_doc_response is not None:
         direct_doc_response += await _direct_agent_trace_block(
@@ -766,7 +766,7 @@ async def send_message(req: ChatRequest):
         and not (write_many_result and isinstance(write_many_result.get("result"), dict) and write_many_result["result"].get("ok"))
         and _is_text_file_edit_followup_intent(req.content)
     ):
-        fallback_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1])
+        fallback_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1], provider_config)
         if fallback_edit_result and fallback_edit_result.get("ok"):
             edit_text_result = {"tool": "edit_text_file", "result": fallback_edit_result}
     if three_d_result and (generated_image_result or modified_image_result):
@@ -1148,7 +1148,7 @@ async def send_message_stream(req: ChatRequest):
     ):
         async def direct_text_edit_event_generator():
             yield f"data: {json.dumps({'status': '正在调用工具：edit_text_file'}, ensure_ascii=False)}\n\n"
-            direct_text_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1])
+            direct_text_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1], provider_config)
             if not direct_text_edit_result:
                 full_content = "没有找到可编辑的已有文本文件。请提供文件路径，或先生成/选择一个文件。"
             else:
@@ -1440,6 +1440,7 @@ async def send_message_stream(req: ChatRequest):
                     req,
                     client,
                     provider_config[1],
+                    provider_config,
                 )
                 if project_document_asset_result is None:
                     project_document_asset_result = {
@@ -1517,6 +1518,7 @@ async def send_message_stream(req: ChatRequest):
                     req,
                     client,
                     provider_config[1],
+                    provider_config,
                 )
                 if attachment_asset_result is None:
                     attachment_asset_result = {
@@ -1586,7 +1588,7 @@ async def send_message_stream(req: ChatRequest):
     folder_summary_result = (
         None
         if use_tool_orchestrator
-        else await _summarize_folder_documents(req, client, provider_config[1])
+        else await _summarize_folder_documents(req, client, provider_config[1], provider_config)
     )
     if folder_summary_result:
         async def folder_summary_event_generator():
@@ -1625,7 +1627,7 @@ async def send_message_stream(req: ChatRequest):
     direct_text_file_result = (
         None
         if use_tool_orchestrator
-        else await _run_direct_text_file_create(req, client, provider_config[1])
+        else await _run_direct_text_file_create(req, client, provider_config[1], provider_config=provider_config)
     )
     if direct_text_file_result:
         async def direct_text_file_event_generator():
@@ -1662,7 +1664,7 @@ async def send_message_stream(req: ChatRequest):
     direct_docx_edit_result = (
         None
         if use_tool_orchestrator
-        else await _run_direct_docx_edit(req, client, provider_config[1])
+        else await _run_direct_docx_edit(req, client, provider_config[1], provider_config)
     )
     if direct_docx_edit_result:
         async def direct_docx_edit_event_generator():
@@ -1699,7 +1701,7 @@ async def send_message_stream(req: ChatRequest):
     direct_docx_result = (
         None
         if use_tool_orchestrator
-        else await _run_direct_docx_create(req, client, provider_config[1])
+        else await _run_direct_docx_create(req, client, provider_config[1], provider_config)
     )
     if direct_docx_result:
         async def direct_docx_event_generator():
@@ -1736,7 +1738,7 @@ async def send_message_stream(req: ChatRequest):
     direct_doc_response = (
         None
         if use_tool_orchestrator
-        else await _run_direct_document_read(req, client, provider_config[1])
+        else await _run_direct_document_read(req, client, provider_config[1], provider_config)
     )
     if direct_doc_response is not None:
         async def direct_document_event_generator():
@@ -1866,7 +1868,7 @@ async def send_message_stream(req: ChatRequest):
                     and _is_text_file_edit_followup_intent(req.content)
                 ):
                     yield f"data: {json.dumps({'status': '正在调用工具：edit_text_file'}, ensure_ascii=False)}\n\n"
-                    fallback_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1])
+                    fallback_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1], provider_config)
                     if fallback_edit_result and fallback_edit_result.get("ok"):
                         edit_text_result = {"tool": "edit_text_file", "result": fallback_edit_result}
                 if three_d_result and (generated_image_result or modified_image_result):

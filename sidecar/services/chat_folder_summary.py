@@ -10,9 +10,10 @@ from services.chat_paths import (
     format_path_resolution_card,
     nearby_path_suggestions,
 )
+from services.model_context import fit_messages_to_context
 
 
-async def summarize_folder_documents(req: ChatRequest, client, model_name: str) -> dict | None:
+async def summarize_folder_documents(req: ChatRequest, client, model_name: str, provider_config=None) -> dict | None:
     if req.image_paths or not is_folder_summary_to_docx_intent(req.content):
         return None
 
@@ -62,10 +63,10 @@ async def summarize_folder_documents(req: ChatRequest, client, model_name: str) 
     try:
         response = await client.chat.completions.create(
             model=model_name,
-            messages=[
+            messages=fit_messages_to_context([
                 {"role": "system", "content": system_hint},
                 {"role": "user", "content": user_text},
-            ],
+            ], provider_config or ("", model_name, "", "", None)),
             response_format={"type": "json_object"},
         )
         payload = json.loads(response.choices[0].message.content or "{}")

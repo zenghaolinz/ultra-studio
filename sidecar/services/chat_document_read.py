@@ -2,6 +2,7 @@ from schemas import ChatRequest
 from services.chat_documents import read_document_attachments
 from services.chat_paths import document_attachments
 from services.chat_project_files import project_document_paths
+from services.model_context import fit_messages_to_context
 
 DOCUMENT_READ_SYSTEM_PROMPT = (
     "\u4f60\u662f\u9879\u76ee\u6587\u6863\u9605\u8bfb\u52a9\u624b\u3002"
@@ -14,7 +15,7 @@ DOCUMENT_READ_SYSTEM_PROMPT = (
 )
 
 
-async def run_project_document_read(req: ChatRequest, client, model_name: str) -> str | None:
+async def run_project_document_read(req: ChatRequest, client, model_name: str, provider_config=None) -> str | None:
     docs = document_attachments(req.image_paths)
     if not docs:
         docs = project_document_paths(req.project_path or "", req.content)[:5]
@@ -31,9 +32,9 @@ async def run_project_document_read(req: ChatRequest, client, model_name: str) -
     )
     response = await client.chat.completions.create(
         model=model_name,
-        messages=[
+        messages=fit_messages_to_context([
             {"role": "system", "content": DOCUMENT_READ_SYSTEM_PROMPT},
             {"role": "user", "content": user_text},
-        ],
+        ], provider_config or ("", model_name, "", "", None)),
     )
     return response.choices[0].message.content or ""

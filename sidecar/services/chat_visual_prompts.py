@@ -1,6 +1,8 @@
 import base64
 import os
 
+from services.model_context import fit_messages_to_context
+
 
 def image_url_part(path: str) -> dict | None:
     norm_path = os.path.normpath(path)
@@ -31,6 +33,7 @@ async def build_visual_edit_prompt(
     source_path: str,
     user_request: str,
     capabilities: dict,
+    provider_config=None,
 ) -> str:
     if not capabilities.get("supports_vision"):
         return user_request
@@ -45,7 +48,7 @@ async def build_visual_edit_prompt(
     try:
         response = await client.chat.completions.create(
             model=model_name,
-            messages=[
+            messages=fit_messages_to_context([
                 {"role": "system", "content": system_hint},
                 {
                     "role": "user",
@@ -54,7 +57,7 @@ async def build_visual_edit_prompt(
                         image_part,
                     ],
                 },
-            ],
+            ], provider_config or ("", model_name, "", "", None)),
         )
         prompt = (response.choices[0].message.content or "").strip()
         return prompt or user_request

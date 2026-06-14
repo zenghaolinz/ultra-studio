@@ -3,6 +3,7 @@ import asyncio
 from schemas import ChatRequest
 from services.chat_messages import utc_iso
 from services.chat_provider_client import get_provider_client
+from services.model_context import fit_messages_to_context
 
 NEW_CONVERSATION_TITLE = "\u65b0\u5bf9\u8bdd"
 TITLE_SYSTEM_PROMPT = (
@@ -31,13 +32,13 @@ async def maybe_generate_title(db, conversation_id: str, user_content: str, mode
     try:
         response = await client.chat.completions.create(
             model=provider_config[1],
-            messages=[
+            messages=fit_messages_to_context([
                 {
                     "role": "system",
                     "content": TITLE_SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": user_content[:200]},
-            ],
+            ], provider_config),
             max_tokens=20,
         )
         title = response.choices[0].message.content.strip().strip('"').strip("'")

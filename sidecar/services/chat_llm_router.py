@@ -10,6 +10,7 @@ from services.chat_router import (
     router_safe_json,
 )
 from services.chat_router_context import build_router_context
+from services.model_context import fit_messages_to_context
 
 
 async def llm_route_request(client, model_name: str, req: ChatRequest, provider_config=None) -> dict | None:
@@ -56,10 +57,10 @@ async def llm_route_request(client, model_name: str, req: ChatRequest, provider_
     try:
         response = await client.chat.completions.create(
             model=model_name,
-            messages=[
+            messages=fit_messages_to_context([
                 {"role": "system", "content": system_hint},
                 {"role": "user", "content": user_text},
-            ],
+            ], provider_config or ("", model_name, "", "", None)),
             response_format={"type": "json_object"},
         )
         decision = router_safe_json(response.choices[0].message.content or "{}")
@@ -75,4 +76,3 @@ async def llm_route_request(client, model_name: str, req: ChatRequest, provider_
     decision["quality_mode"] = quality_mode_from_decision(decision)
     print(f"[router] action={action} quality={decision.get('quality_mode')} source={decision.get('source')} reason={decision.get('reason')}")
     return decision
-

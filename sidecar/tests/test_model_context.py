@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SIDECAR_DIR = Path(__file__).resolve().parents[1]
 if str(SIDECAR_DIR) not in sys.path:
@@ -39,6 +40,20 @@ class ModelContextTests(unittest.TestCase):
         self.assertEqual(fitted[0]["role"], "system")
         self.assertEqual(fitted[-1]["content"], "latest request")
         self.assertTrue(any("Compressed conversation context" in item.get("content", "") for item in fitted))
+
+    def test_fit_messages_logs_compression_stats(self) -> None:
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "x" * 30_000},
+            {"role": "user", "content": "latest"},
+        ]
+
+        with patch("services.model_context.print") as print_mock:
+            fit_messages_to_context(messages, ("local", "tiny", "", "", 4096), response_reserve_tokens=512)
+
+        printed = " ".join(str(arg) for call in print_mock.call_args_list for arg in call.args)
+        self.assertIn("[context] compressed", printed)
+        self.assertIn("window=4096", printed)
 
 
 if __name__ == "__main__":

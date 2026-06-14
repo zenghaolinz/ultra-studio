@@ -13,6 +13,7 @@ from services.chat_documents import read_document_attachments
 from services.chat_intents import is_3d_intent, is_image_generation_intent
 from services.chat_paths import document_attachments
 from services.chat_project_files import project_document_paths
+from services.model_context import fit_messages_to_context
 
 
 def is_attachment_asset_intent(content: str, image_paths: list[str] | None) -> str | None:
@@ -70,6 +71,7 @@ async def build_asset_prompt_from_documents(
     client,
     model_name: str,
     target: str,
+    provider_config=None,
 ) -> str:
     raw_context = "\n\n---\n\n".join(document_sections).strip()
     requirement_text = document_requirement_text(document_sections)
@@ -91,10 +93,10 @@ async def build_asset_prompt_from_documents(
     try:
         response = await client.chat.completions.create(
             model=model_name,
-            messages=[
+            messages=fit_messages_to_context([
                 {"role": "system", "content": system_hint},
                 {"role": "user", "content": f"用户要求：{user_request}\n\n附件文档：\n{raw_context}"},
-            ],
+            ], provider_config or ("", model_name, "", "", None)),
         )
         prompt = (response.choices[0].message.content or "").strip()
         person_words = ["人", "人物", "男人", "女人", "肖像", "human", "person", "man", "woman", "portrait"]
@@ -106,7 +108,7 @@ async def build_asset_prompt_from_documents(
         return fallback
 
 
-async def run_attachment_asset_request(req: ChatRequest, client, model_name: str) -> dict | None:
+async def run_attachment_asset_request(req: ChatRequest, client, model_name: str, provider_config=None) -> dict | None:
     target = is_attachment_asset_intent(req.content, req.image_paths)
     if not target:
         return None
@@ -122,6 +124,7 @@ async def run_attachment_asset_request(req: ChatRequest, client, model_name: str
         client,
         model_name,
         target,
+        provider_config,
     )
 
     if target == "3d":
@@ -138,7 +141,7 @@ async def run_attachment_asset_request(req: ChatRequest, client, model_name: str
     return {"tool": "generate_image", "result": result}
 
 
-async def run_project_document_asset_request(req: ChatRequest, client, model_name: str) -> dict | None:
+async def run_project_document_asset_request(req: ChatRequest, client, model_name: str, provider_config=None) -> dict | None:
     target = is_project_document_asset_intent(req.content, req.project_path)
     if not target or not req.project_path:
         return None
@@ -163,6 +166,7 @@ async def run_project_document_asset_request(req: ChatRequest, client, model_nam
         client,
         model_name,
         target,
+        provider_config,
     )
 
     if target == "3d":

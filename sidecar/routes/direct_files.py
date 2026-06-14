@@ -7,6 +7,7 @@ from db.sqlite import get_db
 from memory import manager as memory_mgr
 from schemas import ChatRequest
 from services.chat_artifacts import resolve_referenced_artifact
+from services.model_context import fit_messages_to_context
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 DOCUMENT_EXTENSIONS = {
@@ -303,6 +304,7 @@ async def run_direct_text_file_create(
     model_name: str,
     force: bool = False,
     prompt_override: str | None = None,
+    provider_config=None,
 ) -> dict | None:
     request_text = prompt_override or req.content
     if req.image_paths or (not force and not is_text_file_create_intent(request_text)):
@@ -323,10 +325,10 @@ async def run_direct_text_file_create(
     )
     response = await client.chat.completions.create(
         model=model_name,
-        messages=[
+        messages=fit_messages_to_context([
             {"role": "system", "content": system_hint},
             {"role": "user", "content": request_text},
-        ],
+        ], provider_config or ("", model_name, "", "", None)),
         response_format={"type": "json_object"},
     )
     payload = _safe_json(response.choices[0].message.content or "{}")
@@ -486,7 +488,7 @@ def _wants_backup(content: str) -> bool:
     return any(word in text for word in ["备份", "保留副本", "留个副本", "backup", "bak"])
 
 
-async def run_direct_text_file_edit(req: ChatRequest, client, model_name: str) -> dict | None:
+async def run_direct_text_file_edit(req: ChatRequest, client, model_name: str, provider_config=None) -> dict | None:
     if req.image_paths:
         return None
 
@@ -527,10 +529,10 @@ async def run_direct_text_file_edit(req: ChatRequest, client, model_name: str) -
     )
     response = await client.chat.completions.create(
         model=model_name,
-        messages=[
+        messages=fit_messages_to_context([
             {"role": "system", "content": system_hint},
             {"role": "user", "content": user_text},
-        ],
+        ], provider_config or ("", model_name, "", "", None)),
         response_format={"type": "json_object"},
     )
     payload = _safe_json(response.choices[0].message.content or "{}")
@@ -653,7 +655,7 @@ def _delete_docx_backups(file_path: str) -> list[str]:
     return deleted
 
 
-async def _generate_docx_paragraphs(content: str, client, model_name: str) -> tuple[str, list[str]]:
+async def _generate_docx_paragraphs(content: str, client, model_name: str, provider_config=None) -> tuple[str, list[str]]:
     system_hint = (
         "你只输出 JSON，不要 Markdown。格式："
         '{"title":"标题","paragraphs":["段落1","段落2"]}。'
@@ -662,10 +664,10 @@ async def _generate_docx_paragraphs(content: str, client, model_name: str) -> tu
     try:
         response = await client.chat.completions.create(
             model=model_name,
-            messages=[
+            messages=fit_messages_to_context([
                 {"role": "system", "content": system_hint},
                 {"role": "user", "content": content},
-            ],
+            ], provider_config or ("", model_name, "", "", None)),
             response_format={"type": "json_object"},
         )
         payload = json.loads(response.choices[0].message.content or "{}")
@@ -679,7 +681,7 @@ async def _generate_docx_paragraphs(content: str, client, model_name: str) -> tu
     return title, [str(item) for item in paragraphs if str(item).strip()]
 
 
-async def run_direct_docx_edit(req: ChatRequest, client, model_name: str) -> dict | None:
+async def run_direct_docx_edit(req: ChatRequest, client, model_name: str, provider_config=None) -> dict | None:
     if req.image_paths:
         return None
 
@@ -701,7 +703,7 @@ async def run_direct_docx_edit(req: ChatRequest, client, model_name: str) -> dic
         f"当前 Word 文档内容：\n{existing_text}\n\n"
         "请只生成要追加到文档末尾的新内容，不要重复已有内容，不要输出备份/删除备份等文件操作说明。"
     )
-    title, paragraphs = await _generate_docx_paragraphs(generation_request, client, model_name)
+    title, paragraphs = await _generate_docx_paragraphs(generation_request, client, model_name, provider_config)
     text = "\n".join(([title] if title else []) + paragraphs)
     wants_backup = _wants_backup(req.content)
     result = memory_mgr.handle_edit_docx_document(target_path, "append", text, "", "", wants_backup)
@@ -736,7 +738,7 @@ def _extract_requested_docx_path(content: str, project_path: str | None = None) 
     return filename
 
 
-async def run_direct_docx_create(req: ChatRequest, client, model_name: str) -> dict | None:
+async def run_direct_docx_create(req: ChatRequest, client, model_name: str, provider_config=None) -> dict | None:
     if req.image_paths or not is_docx_create_intent(req.content):
         return None
 
@@ -749,10 +751,10 @@ async def run_direct_docx_create(req: ChatRequest, client, model_name: str) -> d
     try:
         response = await client.chat.completions.create(
             model=model_name,
-            messages=[
+            messages=fit_messages_to_context([
                 {"role": "system", "content": system_hint},
                 {"role": "user", "content": req.content},
-            ],
+            ], provider_config or ("", model_name, "", "", None)),
             response_format={"type": "json_object"},
         )
         payload = json.loads(response.choices[0].message.content or "{}")
@@ -786,7 +788,7 @@ def _is_document_read_intent(content: str, image_paths: list[str] | None = None)
     )
 
 
-async def run_direct_document_read(req: ChatRequest, client, model_name: str) -> str | None:
+async def run_direct_document_read(req: ChatRequest, client, model_name: str, provider_config=None) -> str | None:
     docs = _document_attachments(req.image_paths)
     if not _is_document_read_intent(req.content, req.image_paths):
         return None
@@ -801,7 +803,7 @@ async def run_direct_document_read(req: ChatRequest, client, model_name: str) ->
 
     response = await client.chat.completions.create(
         model=model_name,
-        messages=[
+        messages=fit_messages_to_context([
             {
                 "role": "system",
                 "content": "你是文档阅读助手。基于用户提供的文档内容回答，不要编造。如果内容不足，直接说明。回答要简洁、结构清楚。",
@@ -810,7 +812,7 @@ async def run_direct_document_read(req: ChatRequest, client, model_name: str) ->
                 "role": "user",
                 "content": f"用户需求：{req.content}\n\n文档内容：\n\n" + "\n\n---\n\n".join(sections),
             },
-        ],
+        ], provider_config or ("", model_name, "", "", None)),
     )
     return response.choices[0].message.content or ""
 

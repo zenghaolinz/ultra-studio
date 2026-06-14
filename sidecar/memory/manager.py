@@ -13,6 +13,7 @@ from memory.memory_map import (
 )
 from memory.ltm import store_memory
 from memory.json_store import load_branch
+from services.model_context import fit_messages_to_context
 
 STM_WINDOW_SIZE = 20
 CONSOLIDATE_CHUNK_SIZE = 5
@@ -851,7 +852,7 @@ async def check_consolidation(conversation_id: str):
 
     db = await get_db()
     model_row = await db.execute_fetchall(
-        "SELECT provider, model_name, api_key, base_url FROM model_configs WHERE is_default = 1 LIMIT 1"
+        "SELECT provider, model_name, api_key, base_url, context_window FROM model_configs WHERE is_default = 1 LIMIT 1"
     )
 
     if not model_row:
@@ -870,13 +871,13 @@ async def check_consolidation(conversation_id: str):
         tools = build_tools_definition()
         response = await client.chat.completions.create(
             model=provider_config[1],
-            messages=[
+            messages=fit_messages_to_context([
                 {
                     "role": "system",
                     "content": f"请将以下对话片段总结为简洁的知识要点。\n\n<记忆地图>\n{map_text}\n</记忆地图>\n\n对于每个要点，调用 save_memory 函数保存。不要输出文字，只调用函数。",
                 },
                 {"role": "user", "content": chunk_text},
-            ],
+            ], provider_config, tools),
             tools=tools,
             tool_choice="auto",
         )

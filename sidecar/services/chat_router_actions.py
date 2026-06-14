@@ -39,7 +39,14 @@ async def run_router_action(decision: dict, req: ChatRequest, client, model_name
         }
 
     if action == "create_text_file":
-        result = await run_direct_text_file_create(req, client, model_name, force=True, prompt_override=prompt)
+        result = await run_direct_text_file_create(
+            req,
+            client,
+            model_name,
+            force=True,
+            prompt_override=prompt,
+            provider_config=provider_config,
+        )
         return {"tool": "create_text_file", "result": result or {"ok": False, "error": "没有生成可写入的本地文件内容"}}
 
     if action == "generate_image":
@@ -86,7 +93,7 @@ async def run_router_action(decision: dict, req: ChatRequest, client, model_name
                 "tool": "edit_image",
                 "result": {"status": "error", "message": "没有找到可编辑的源图片，请先上传图片、生成一张图片，或在当前项目文件夹中放入图片。"},
             }
-        edit_prompt = await build_visual_edit_prompt(client, model_name, source, prompt, capabilities)
+        edit_prompt = await build_visual_edit_prompt(client, model_name, source, prompt, capabilities, provider_config)
         result = await asyncio.to_thread(memory_mgr.handle_modify_image, source, edit_prompt, 0.5, req.conversation_id)
         result["source_prompt"] = edit_prompt
         result["source_image"] = source
@@ -146,25 +153,24 @@ async def run_router_action(decision: dict, req: ChatRequest, client, model_name
         return {"tool": "generate_3d_from_generated_multiview", "result": result}
 
     if action in {"project_document_image", "project_document_3d"}:
-        return await run_project_document_asset_request(req, client, model_name)
+        return await run_project_document_asset_request(req, client, model_name, provider_config)
 
     if action in {"attachment_document_image", "attachment_document_3d"}:
-        return await run_attachment_asset_request(req, client, model_name)
+        return await run_attachment_asset_request(req, client, model_name, provider_config)
 
     if action == "folder_summary_docx":
-        return await summarize_folder_documents(req, client, model_name)
+        return await summarize_folder_documents(req, client, model_name, provider_config)
 
     if action == "create_docx":
-        return await run_direct_docx_create(req, client, model_name)
+        return await run_direct_docx_create(req, client, model_name, provider_config)
 
     if action == "edit_docx":
-        return await run_direct_docx_edit(req, client, model_name)
+        return await run_direct_docx_edit(req, client, model_name, provider_config)
 
     if action == "read_document":
-        direct = await run_direct_document_read(req, client, model_name)
+        direct = await run_direct_document_read(req, client, model_name, provider_config)
         if direct is not None:
             return direct
-        return await run_project_document_read(req, client, model_name)
+        return await run_project_document_read(req, client, model_name, provider_config)
 
     return None
-

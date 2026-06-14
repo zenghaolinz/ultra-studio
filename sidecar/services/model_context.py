@@ -20,6 +20,16 @@ class ModelContextSpec:
     source: str
 
 
+@dataclass(frozen=True)
+class ContextFitResult:
+    messages: list[dict]
+    spec: ModelContextSpec
+    budget: int
+    before_tokens: int
+    after_tokens: int
+    compressed: bool
+
+
 def infer_context_window(provider: str, model_name: str) -> int:
     provider_key = (provider or "").lower()
     model = (model_name or "").lower()
@@ -144,15 +154,33 @@ def fit_messages_to_context(
     tools: list[dict] | None = None,
     response_reserve_tokens: int = RESPONSE_RESERVE_TOKENS,
 ) -> list[dict]:
+    return fit_messages_to_context_with_stats(
+        messages,
+        provider_config,
+        tools=tools,
+        response_reserve_tokens=response_reserve_tokens,
+    ).messages
+
+
+def fit_messages_to_context_with_stats(
+    messages: list[dict],
+    provider_config: Any,
+    tools: list[dict] | None = None,
+    response_reserve_tokens: int = RESPONSE_RESERVE_TOKENS,
+) -> ContextFitResult:
     spec = context_spec_from_provider_config(provider_config)
     tool_tokens = estimate_tools_tokens(tools)
     budget = max(MIN_CONTEXT_WINDOW // 2, spec.context_window - response_reserve_tokens - tool_tokens)
     copied = deepcopy(messages)
-    if estimate_messages_tokens(copied) <= budget:
-        return copied
+    before_tokens = estimate_messages_tokens(copied)
+    if before_tokens <= budget:
+        return ContextFitResult(copied, spec, budget, before_tokens, before_tokens, False)
 
     if len(copied) <= 2:
-        return _trim_large_messages(copied, budget)
+        fitted = _trim_large_messages(copied, budget)
+        after_tokens = estimate_messages_tokens(fitted)
+        _log_context_fit(spec, budget, before_tokens, after_tokens, True)
+        return ContextFitResult(fitted, spec, budget, before_tokens, after_tokens, True)
 
     system_messages = [message for message in copied if message.get("role") == "system"]
     non_system = [message for message in copied if message.get("role") != "system"]
@@ -179,8 +207,33 @@ def fit_messages_to_context(
     fitted.extend(kept)
     fitted.extend(latest)
     if estimate_messages_tokens(fitted) <= budget:
-        return fitted
-    return _trim_large_messages(fitted, budget)
+        after_tokens = estimate_messages_tokens(fitted)
+        _log_context_fit(spec, budget, before_tokens, after_tokens, True)
+        return ContextFitResult(fitted, spec, budget, before_tokens, after_tokens, True)
+    fitted = _trim_large_messages(fitted, budget)
+    after_tokens = estimate_messages_tokens(fitted)
+    _log_context_fit(spec, budget, before_tokens, after_tokens, True)
+    return ContextFitResult(fitted, spec, budget, before_tokens, after_tokens, True)
+
+
+def _log_context_fit(
+    spec: ModelContextSpec,
+    budget: int,
+    before_tokens: int,
+    after_tokens: int,
+    compressed: bool,
+):
+    if not compressed:
+        return
+    print(
+        "[context] compressed "
+        f"provider={spec.provider or '-'} "
+        f"model={spec.model_name or '-'} "
+        f"window={spec.context_window} "
+        f"source={spec.source} "
+        f"budget={budget} "
+        f"tokens={before_tokens}->{after_tokens}"
+    )
 
 
 def _trim_large_messages(messages: list[dict], budget: int) -> list[dict]:
