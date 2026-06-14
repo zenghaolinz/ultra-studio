@@ -27,6 +27,7 @@ from routes.direct_files import (
     run_direct_text_file_create as _run_direct_text_file_create,
     run_direct_text_file_edit as _run_direct_text_file_edit,
 )
+from services.chat_result_repair import repair_text_edit_result as _repair_text_edit_result
 from services.chat_response_formatters import (
     format_3d_response as _format_3d_response,
     format_attachment_asset_start as _format_attachment_asset_start,
@@ -760,15 +761,14 @@ async def send_message(req: ChatRequest):
         and write_many_result["result"].get("ok")
     ):
         edit_text_result = None
-    if (
-        edit_text_result
-        and _edit_text_result_can_fallback(edit_text_result.get("result"))
-        and not (write_many_result and isinstance(write_many_result.get("result"), dict) and write_many_result["result"].get("ok"))
-        and _is_text_file_edit_followup_intent(req.content)
-    ):
-        fallback_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1], provider_config)
-        if fallback_edit_result and fallback_edit_result.get("ok"):
-            edit_text_result = {"tool": "edit_text_file", "result": fallback_edit_result}
+    edit_text_result, _ = await _repair_text_edit_result(
+        req,
+        client,
+        provider_config[1],
+        provider_config,
+        edit_text_result,
+        write_many_result,
+    )
     if three_d_result and (generated_image_result or modified_image_result):
         source_result = (generated_image_result or modified_image_result)["result"]
         source_image = (
@@ -1861,16 +1861,17 @@ async def send_message_stream(req: ChatRequest):
                     and write_many_result["result"].get("ok")
                 ):
                     edit_text_result = None
-                if (
-                    edit_text_result
-                    and _edit_text_result_can_fallback(edit_text_result.get("result"))
-                    and not (write_many_result and isinstance(write_many_result.get("result"), dict) and write_many_result["result"].get("ok"))
-                    and _is_text_file_edit_followup_intent(req.content)
-                ):
+                repaired_edit_result, repair_record = await _repair_text_edit_result(
+                    req,
+                    client,
+                    provider_config[1],
+                    provider_config,
+                    edit_text_result,
+                    write_many_result,
+                )
+                if repair_record:
                     yield f"data: {json.dumps({'status': '正在调用工具：edit_text_file'}, ensure_ascii=False)}\n\n"
-                    fallback_edit_result = await _run_direct_text_file_edit(req, client, provider_config[1], provider_config)
-                    if fallback_edit_result and fallback_edit_result.get("ok"):
-                        edit_text_result = {"tool": "edit_text_file", "result": fallback_edit_result}
+                    edit_text_result = repaired_edit_result
                 if three_d_result and (generated_image_result or modified_image_result):
                     source_result = (generated_image_result or modified_image_result)["result"]
                     source_image = (
