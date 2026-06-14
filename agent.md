@@ -149,6 +149,6 @@ Likely disposable tables:
 - Keep LLM router decision prompting/parsing out of `sidecar/routes/chat.py`; use `sidecar/services/chat_llm_router.py`.
 - Keep router action execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_actions.py`.
 - Keep DSML/textual tool parsing and execution out of `sidecar/routes/chat.py`; use `sidecar/services/textual_tool_parser.py` for parsing only, and `sidecar/services/chat_textual_tools.py` for textual tool dispatch and answer synthesis.
-- Keep OpenAI tool-call loop execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_loop.py`.
+- Keep OpenAI tool-call loop execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_loop.py`. The loop includes an explicit result-verification prompt after each tool batch: the model should inspect tool results against the user request, call more tools when results are incomplete or wrong, and only answer when the task is complete or waiting for confirmation/user input.
 - SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
 - Run `npm run check` after frontend changes and `cargo check --manifest-path src-tauri/Cargo.toml` after Tauri command changes.

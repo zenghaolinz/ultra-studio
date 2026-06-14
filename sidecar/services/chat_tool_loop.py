@@ -10,6 +10,19 @@ from services.chat_tool_results import first_tool_result
 
 
 MAX_TOOL_CALL_ROUNDS = 6
+RESULT_VERIFICATION_PROMPT = (
+    "工具结果已返回。请先根据用户原始需求检查结果是否真正完成任务："
+    "路径、文件内容、生成产物、命令输出或读取结果是否足够且正确。"
+    "如果不完整、失败、缺少读取前置步骤、路径不明确、结果和用户需求不一致，"
+    "不要直接解释失败，继续调用合适的工具修复。"
+    "只有确认任务已经完成，或必须等待用户确认/补充信息时，才用自然语言回复用户。"
+)
+
+
+def _append_result_verification_prompt(messages: list[dict]):
+    if messages and messages[-1].get("role") == "system" and messages[-1].get("content") == RESULT_VERIFICATION_PROMPT:
+        return
+    messages.append({"role": "system", "content": RESULT_VERIFICATION_PROMPT})
 
 
 async def run_tool_calls(
@@ -664,5 +677,7 @@ async def run_tool_calls(
                         "content": json.dumps({"error": "Unknown function"}),
                     }
                 )
+
+        _append_result_verification_prompt(messages)
 
     return messages, tool_results, saved_memories

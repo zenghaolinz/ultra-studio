@@ -8,7 +8,7 @@ SIDECAR_DIR = Path(__file__).resolve().parents[1]
 if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
-from services.chat_tool_loop import run_tool_calls
+from services.chat_tool_loop import RESULT_VERIFICATION_PROMPT, run_tool_calls
 
 
 class FakeMessage:
@@ -65,8 +65,44 @@ class ChatToolLoopTests(unittest.IsolatedAsyncioTestCase):
 
         recall.assert_called_once_with("main")
         self.assertEqual(tool_results, [{"tool": "recall_memory", "result": [{"text": "remembered"}]}])
-        self.assertEqual(messages[-1]["role"], "tool")
-        self.assertIn("remembered", messages[-1]["content"])
+        self.assertTrue(any(message.get("role") == "tool" and "remembered" in message.get("content", "") for message in messages))
+        self.assertEqual(messages[-1], {"role": "system", "content": RESULT_VERIFICATION_PROMPT})
+
+    async def test_run_tool_calls_adds_verification_step_before_repair_call(self) -> None:
+        edit_call = SimpleNamespace(
+            id="call-edit",
+            function=SimpleNamespace(
+                name="edit_text_file",
+                arguments='{"file_path":"C:/tmp/example.txt","action":"replace","find":"old","replace":"new"}',
+            ),
+        )
+        read_call = SimpleNamespace(
+            id="call-read",
+            function=SimpleNamespace(
+                name="read_document",
+                arguments='{"file_path":"C:/tmp/example.txt","max_chars":12000}',
+            ),
+        )
+        first = SimpleNamespace(choices=[SimpleNamespace(message=FakeMessage(tool_calls=[edit_call]))])
+        second = SimpleNamespace(choices=[SimpleNamespace(message=FakeMessage(tool_calls=[read_call]))])
+        third = SimpleNamespace(choices=[SimpleNamespace(message=FakeMessage(tool_calls=None))])
+        client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=AsyncMock(side_effect=[first, second, third]))
+            )
+        )
+
+        with patch("services.chat_tool_loop.memory_mgr.handle_read_document") as read_document:
+            read_document.return_value = {"ok": True, "path": "C:/tmp/example.txt", "content": "old"}
+
+            messages, tool_results, _ = await run_tool_calls(client, "model", [{"role": "user", "content": "fix file"}], [])
+
+        self.assertEqual([item["tool"] for item in tool_results], ["edit_text_file", "read_document"])
+        self.assertTrue(tool_results[0]["result"]["needs_read"])
+        self.assertEqual(client.chat.completions.create.await_count, 3)
+        second_call_messages = client.chat.completions.create.await_args_list[1].kwargs["messages"]
+        self.assertTrue(any(message.get("content") == RESULT_VERIFICATION_PROMPT for message in second_call_messages))
+        self.assertEqual(messages[-1], {"role": "system", "content": RESULT_VERIFICATION_PROMPT})
 
 
 if __name__ == "__main__":
