@@ -3,6 +3,7 @@ node_modules/
 dist/
 src-tauri/target/
 sidecar/.venv/
+.worktrees/
 
 # Python cache
 __pycache__/
