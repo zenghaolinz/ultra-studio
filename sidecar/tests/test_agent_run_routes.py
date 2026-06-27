@@ -33,7 +33,50 @@ class FakeLoop:
         }
 
 
+class ConfirmationLoop:
+    async def stream(self, client, model_name, request, capabilities):
+        yield {
+            "runId": request.run_id,
+            "conversationId": request.conversation_id,
+            "type": "run.finished",
+            "sequence": 1,
+            "timestamp": "now",
+            "data": {
+                "status": "confirmation_required",
+                "content": "",
+                "toolCall": {
+                    "id": "call-1",
+                    "name": "delete_file",
+                    "arguments": {"target_path": "C:/tmp/a.txt", "target_type": "file"},
+                },
+                "metrics": {},
+            },
+        }
+
+
 class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_confirmation_event_is_formatted_and_persisted_for_existing_ui(self) -> None:
+        runtime_request = AgentRunRequest(
+            run_id="run-1",
+            conversation_id="conversation-1",
+            messages=[{"role": "user", "content": "delete it"}],
+        )
+        prepared = (ConfirmationLoop(), object(), "model", runtime_request, {"files"}, object())
+        with patch.object(agent_runs, "_prepare_run", AsyncMock(return_value=prepared)), patch.object(
+            agent_runs,
+            "save_assistant_message",
+            AsyncMock(return_value=("message-1", "created")),
+        ) as save_message:
+            response = await agent_runs.stream_agent_run(
+                ChatRequest(conversation_id="conversation-1", content="delete it")
+            )
+            chunks = [chunk async for chunk in response.body_iterator]
+
+        payload = json.loads(chunks[-1].removeprefix("data: ").strip())
+        self.assertIn("[CONFIRM_DELETE_REQUIRED]", payload["data"]["content"])
+        self.assertEqual(payload["data"]["messageId"], "message-1")
+        save_message.assert_awaited_once()
+
     async def test_capabilities_include_generation_only_when_context_offers_it(self) -> None:
         generation_tool = {
             "type": "function",

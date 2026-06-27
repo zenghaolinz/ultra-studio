@@ -13,7 +13,9 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
 - Tauri bridge: `src-tauri/src/`
   - Commands for chat, queue, settings, filesystem, and sidecar control.
 - Python sidecar: `sidecar/`
-  - Chat routes and orchestration: `sidecar/routes/chat.py`
+  - Default single-loop agent runtime: `sidecar/agent_runtime/`
+  - Default agent SSE route: `sidecar/routes/agent_runs.py`
+  - Legacy chat compatibility route: `sidecar/routes/chat.py`
   - Chat response formatting helpers: `sidecar/services/chat_response_formatters.py`
   - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
   - Chat confirmed delete/delete-then-create flow: `sidecar/services/chat_delete_flow.py`
@@ -118,10 +120,20 @@ Likely disposable tables:
 - Chat task cards and generation history consume the shared store; do not restore component-local task polling.
 - Retry runs through `sidecar/services/generation_dispatcher.py` and reuses the newly linked task row.
 
+## 0.7.1 Single-Loop Agent Runtime
+
+- Tauri chat streaming defaults to `POST /api/agent/runs/stream`.
+- The runtime in `sidecar/agent_runtime/` uses one primary model/tool loop. Ordinary chat does not call a separate LLM router and text deltas are not buffered for DSML detection.
+- Tool availability is selected deterministically from context, then filtered by capability and permission policy. Existing file, web, generation, and queue services remain the execution authority behind adapters.
+- Image, video, and 3D tools enqueue work and return task IDs to the model immediately.
+- Standard mode stops destructive calls with a structured confirmation event. The route adapter formats the existing confirmation-card markers until the frontend consumes structured confirmations directly.
+- Set `ULTRA_AGENT_RUNTIME=legacy` (or `0`) before starting the desktop app to temporarily route chat through `/api/chat/send/stream`.
+- The legacy LLM router and textual/DSML path are compatibility-only. Do not add new behavior there; remove them after the default runtime passes real-provider smoke tests.
+
 ## Near-Term Priorities
 
 1. Add VRAM-aware scheduling and explicit concurrency policies to the task center.
-2. Continue splitting `sidecar/routes/chat.py` into route handlers, agent orchestration, tool execution, status events, and formatting.
+2. Remove the legacy LLM router and global textual/DSML buffering after real-provider cutover validation; keep `sidecar/routes/chat.py` shrinking until it can be deleted.
 3. Componentize settings into ComfyUI runtime, model providers, generation queue, MCP/tools, and app data sections.
 4. Expand real-runtime integration tests for multi-conversation chat and queued ComfyUI generation.
 

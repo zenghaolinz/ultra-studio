@@ -69,6 +69,36 @@ def _capabilities_for_tools(tools: list[dict]) -> set[str]:
     return capabilities
 
 
+def _confirmation_content(tool_call: dict) -> str:
+    name = str(tool_call.get("name") or "")
+    arguments = tool_call.get("arguments") or {}
+    if name == "delete_file":
+        return (
+            "[CONFIRM_DELETE_REQUIRED]\n"
+            f"目标: `{arguments.get('target_path', '')}`\n"
+            f"类型: {arguments.get('target_type', 'auto')}\n"
+            "提示: 此操作需要确认。\n"
+            "[/CONFIRM_DELETE_REQUIRED]"
+        )
+    if name == "run_command":
+        return (
+            "[CONFIRM_COMMAND_REQUIRED]\n"
+            f"命令: `{arguments.get('command', '')}`\n"
+            f"目录: `{arguments.get('cwd', '')}`\n"
+            "提示: 此操作需要确认。\n"
+            "[/CONFIRM_COMMAND_REQUIRED]"
+        )
+    if name == "run_project_check":
+        return (
+            "[CONFIRM_PROJECT_CHECK_REQUIRED]\n"
+            f"项目: `{arguments.get('project_path', '')}`\n"
+            f"类型: {arguments.get('check_type', 'auto')}\n"
+            "提示: 此操作需要确认。\n"
+            "[/CONFIRM_PROJECT_CHECK_REQUIRED]"
+        )
+    return "This action requires confirmation."
+
+
 async def _prepare_run(req: ChatRequest):
     db = await get_db()
     await remove_internal_source_message(db, req)
@@ -120,7 +150,9 @@ async def stream_agent_run(req: ChatRequest):
         ):
             if event["type"] == "run.finished":
                 data = event["data"]
-                if data.get("status") == "completed" and data.get("content"):
+                if data.get("status") == "confirmation_required":
+                    data["content"] = _confirmation_content(data.get("toolCall") or {})
+                if data.get("status") in {"completed", "confirmation_required"} and data.get("content"):
                     message_id, created_at = await save_assistant_message(
                         db,
                         req.conversation_id,

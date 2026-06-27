@@ -14,9 +14,51 @@ fn response_excerpt(body: &str) -> String {
     body.chars().take(500).collect()
 }
 
+fn agent_stream_endpoint(use_agent_runtime: bool) -> &'static str {
+    if use_agent_runtime {
+        "/api/agent/runs/stream"
+    } else {
+        "/api/chat/send/stream"
+    }
+}
+
+fn translate_agent_event(
+    event: &serde_json::Value,
+) -> Option<(&'static str, serde_json::Value, bool)> {
+    let event_type = event.get("type")?.as_str()?;
+    let data = event.get("data").cloned().unwrap_or_else(|| serde_json::json!({}));
+    match event_type {
+        "text.delta" => Some((
+            "chat-chunk",
+            serde_json::json!({"token": data.get("text").and_then(|v| v.as_str()).unwrap_or("")}),
+            false,
+        )),
+        "tool.started" => {
+            let name = data.pointer("/toolCall/name").and_then(|v| v.as_str()).unwrap_or("tool");
+            Some((
+                "chat-status",
+                serde_json::json!({"status": "tool", "description": format!("Calling tool: {}", name)}),
+                false,
+            ))
+        }
+        "run.finished" => Some((
+            "chat-done",
+            serde_json::json!({
+                "done": true,
+                "content": data.get("content").cloned().unwrap_or_else(|| serde_json::json!("")),
+                "message_id": data.get("messageId").cloned().unwrap_or(serde_json::Value::Null),
+                "status": data.get("status").cloned().unwrap_or(serde_json::Value::Null),
+                "metrics": data.get("metrics").cloned().unwrap_or_else(|| serde_json::json!({})),
+            }),
+            true,
+        )),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::response_excerpt;
+    use super::{agent_stream_endpoint, response_excerpt, translate_agent_event};
 
     #[test]
     fn response_excerpt_truncates_unicode_on_character_boundaries() {
@@ -25,6 +67,38 @@ mod tests {
 
         assert_eq!(excerpt.chars().count(), 500);
         assert!(body.starts_with(&excerpt));
+    }
+
+    #[test]
+    fn runtime_flag_selects_parallel_agent_endpoint() {
+        assert_eq!(agent_stream_endpoint(true), "/api/agent/runs/stream");
+        assert_eq!(agent_stream_endpoint(false), "/api/chat/send/stream");
+    }
+
+    #[test]
+    fn runtime_text_and_finished_events_translate_to_existing_chat_events() {
+        let text = serde_json::json!({
+            "type": "text.delta",
+            "data": {"text": "hello"}
+        });
+        let finished = serde_json::json!({
+            "type": "run.finished",
+            "data": {
+                "status": "completed",
+                "content": "hello",
+                "messageId": "message-1"
+            }
+        });
+
+        let (text_event, text_payload, text_terminal) = translate_agent_event(&text).unwrap();
+        let (done_event, done_payload, done_terminal) = translate_agent_event(&finished).unwrap();
+
+        assert_eq!(text_event, "chat-chunk");
+        assert_eq!(text_payload["token"], "hello");
+        assert!(!text_terminal);
+        assert_eq!(done_event, "chat-done");
+        assert_eq!(done_payload["message_id"], "message-1");
+        assert!(done_terminal);
     }
 }
 
@@ -356,6 +430,7 @@ pub async fn send_stream_start(
     vision_enabled: Option<bool>,
     hidden_user_message: Option<bool>,
     remove_message_id: Option<String>,
+    use_agent_runtime: Option<bool>,
 ) -> Result<bool, String> {
     check_ready(&state)?;
 
@@ -363,6 +438,12 @@ pub async fn send_stream_start(
     let app_clone = app.clone();
     let conv_id_for_events = conversation_id.clone();
     let conv_id_for_title = conversation_id.clone();
+    let use_agent_runtime = use_agent_runtime.unwrap_or_else(|| {
+        std::env::var("ULTRA_AGENT_RUNTIME")
+            .map(|value| value != "0" && !value.eq_ignore_ascii_case("legacy"))
+            .unwrap_or(true)
+    });
+    let stream_endpoint = agent_stream_endpoint(use_agent_runtime);
 
     let mut body = serde_json::json!({
         "conversation_id": conv_id_for_title,
@@ -382,7 +463,7 @@ pub async fn send_stream_start(
 
     tokio::spawn(async move {
         let resp = client
-            .post(format!("{}/api/chat/send/stream", SIDECAR_URL))
+            .post(format!("{}{}", SIDECAR_URL, stream_endpoint))
             .json(&body)
             .send()
             .await;
@@ -421,6 +502,18 @@ pub async fn send_stream_start(
                                         }
                                         match serde_json::from_str::<serde_json::Value>(data) {
                                             Ok(json_val) => {
+                                                if use_agent_runtime {
+                                                    if let Some((event_name, mut payload, terminal)) = translate_agent_event(&json_val) {
+                                                        if let serde_json::Value::Object(ref mut obj) = payload {
+                                                            obj.insert("conversationId".into(), serde_json::Value::String(conv_id_for_events.clone()));
+                                                        }
+                                                        let _ = app_clone.emit(event_name, payload);
+                                                        if terminal {
+                                                            return;
+                                                        }
+                                                    }
+                                                    continue;
+                                                }
                                                 let mut event_val = json_val;
                                                 if let serde_json::Value::Object(ref mut obj) = event_val {
                                                     obj.insert("conversationId".into(), serde_json::Value::String(conv_id_for_events.clone()));
