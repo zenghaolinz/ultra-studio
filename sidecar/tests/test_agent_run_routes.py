@@ -34,6 +34,27 @@ class FakeLoop:
 
 
 class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_capabilities_include_generation_only_when_context_offers_it(self) -> None:
+        generation_tool = {
+            "type": "function",
+            "function": {"name": "generate_video", "parameters": {"type": "object"}},
+        }
+
+        self.assertEqual(
+            agent_runs._capabilities_for_tools([generation_tool]),
+            {"generation"},
+        )
+        self.assertEqual(agent_runs._capabilities_for_tools([]), set())
+
+        mutation_tool = {
+            "type": "function",
+            "function": {"name": "edit_text_file", "parameters": {"type": "object"}},
+        }
+        self.assertEqual(
+            agent_runs._capabilities_for_tools([mutation_tool]),
+            {"files"},
+        )
+
     async def test_route_streams_runtime_events_and_persists_completed_text(self) -> None:
         runtime_request = AgentRunRequest(
             run_id="run-1",

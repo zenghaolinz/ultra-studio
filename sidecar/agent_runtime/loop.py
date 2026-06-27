@@ -92,6 +92,7 @@ class AgentLoop:
                     call.name,
                     self.registry.risk(call.name),
                     request.permission_mode,
+                    call.arguments,
                 )
                 if decision == "ask":
                     yield emitter.emit(

@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from agent_runtime.legacy_bridge import build_read_only_registry
+from agent_runtime.legacy_bridge import build_runtime_registry
 from agent_runtime.loop import AgentLoop
 from agent_runtime.models import AgentRunRequest
 from agent_runtime.policy import PermissionPolicy
@@ -22,6 +22,23 @@ from services.model_context import fit_messages_to_context
 
 router = APIRouter(prefix="/api/agent/runs", tags=["agent-runs"])
 
+FILE_TOOL_NAMES = {
+    "read_document", "read_many_files", "list_directory", "search_files",
+    "organize_files", "write_many_files", "run_command", "run_project_check",
+    "delete_file", "edit_text_file", "create_docx_document", "edit_docx_document",
+}
+WEB_TOOL_NAMES = {"web_search", "web_fetch"}
+GENERATION_TOOL_NAMES = {
+    "generate_image",
+    "generate_video",
+    "generate_3d_from_text",
+    "generate_3d_from_image",
+    "generate_3d_fusion",
+    "modify_image_with_flux",
+    "generate_multiview_images_from_image",
+    "generate_3d_from_generated_multiview",
+}
+
 
 def _openai_tools(definitions) -> list[dict]:
     return [
@@ -35,6 +52,21 @@ def _openai_tools(definitions) -> list[dict]:
         }
         for definition in definitions
     ]
+
+
+def _capabilities_for_tools(tools: list[dict]) -> set[str]:
+    names = {
+        str((tool.get("function") or {}).get("name") or "")
+        for tool in tools
+    }
+    capabilities: set[str] = set()
+    if names & FILE_TOOL_NAMES:
+        capabilities.add("files")
+    if names & WEB_TOOL_NAMES:
+        capabilities.add("web")
+    if names & GENERATION_TOOL_NAMES:
+        capabilities.add("generation")
+    return capabilities
 
 
 async def _prepare_run(req: ChatRequest):
@@ -57,17 +89,8 @@ async def _prepare_run(req: ChatRequest):
         ]
         legacy_tools = []
 
-    legacy_names = {
-        str((tool.get("function") or {}).get("name") or "")
-        for tool in legacy_tools
-    }
-    capabilities: set[str] = set()
-    if legacy_names & {"read_document", "read_many_files", "list_directory", "search_files"}:
-        capabilities.add("files")
-    if legacy_names & {"web_search", "web_fetch"}:
-        capabilities.add("web")
-
-    registry = build_read_only_registry()
+    capabilities = _capabilities_for_tools(legacy_tools)
+    registry = build_runtime_registry(req.conversation_id, req.permission_mode)
     definitions = registry.definitions(capabilities)
     messages = fit_messages_to_context(
         context_messages,

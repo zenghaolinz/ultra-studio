@@ -21,6 +21,16 @@ class AgentRuntimePolicyTests(unittest.TestCase):
 
         self.assertEqual(policy.decide("run_command", "write", "autonomous"), "deny")
 
+    def test_confirmed_destructive_call_is_allowed_in_standard_mode(self) -> None:
+        policy = PermissionPolicy()
+
+        self.assertEqual(
+            policy.decide(
+                "delete_file", "destructive", "standard", {"confirmed": True}
+            ),
+            "allow",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
