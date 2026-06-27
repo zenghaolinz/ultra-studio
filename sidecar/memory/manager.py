@@ -1,6 +1,7 @@
 import json
 import base64
 import os
+import re
 import threading
 
 from db.sqlite import get_db
@@ -22,6 +23,30 @@ OVERLAP_SIZE = 1
 
 def infer_tool_scope(user_input: str, image_paths: list[str] | None = None) -> str:
     text = (user_input or "").lower()
+    local_words = ["项目", "代码", "文件", "文件夹", "目录", "仓库", "本地"]
+    search_words_zh = ["搜索", "查找", "检索"]
+    if any(word in text for word in local_words) and any(word in text for word in search_words_zh):
+        return "file"
+    if any(word in text for word in ["删除", "删掉", "移除", "清理"]):
+        return "file"
+    if any(word in text for word in ["命令", "终端", "运行", "执行", "测试", "构建"]):
+        return "file"
+    if any(word in text for word in ["搜索", "联网", "网上", "最新", "新闻", "价格", "今天"]):
+        return "web"
+    if any(word in text for word in [
+        "生成图片", "生成一张", "生图", "出图", "视频", "短片", "动画",
+        "三维", "建模", "生成模型", "三视图",
+    ]):
+        return "3d"
+    has_local_path = bool(re.search(r"[a-z]:[\\/]", text))
+    has_file_extension = bool(re.search(
+        r"\.(?:txt|md|csv|json|pdf|docx|py|js|ts|tsx|jsx|html|css)(?:\b|`)",
+        text,
+    ))
+    if has_local_path or has_file_extension or any(
+        word in text for word in ["读取", "文件", "文档", "文件夹", "目录", "修改", "总结", "整理", "桌面"]
+    ):
+        return "file"
     if image_paths:
         if any(word in text for word in ["3d", "三维", "建模", "转3d", "转 3d", "生成模型", "三视图", "三视角"]):
             return "3d"

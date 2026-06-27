@@ -110,6 +110,19 @@ class PromptCacheContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.infer_tool_scope("search project for create_text_file"), "file")
         self.assertEqual(manager.infer_tool_scope("find where used run_command in repo"), "file")
 
+    def test_explicit_local_path_or_chinese_read_request_uses_file_scope(self) -> None:
+        self.assertEqual(
+            manager.infer_tool_scope(r"请读取 E:\projects\demo\agent.md 的第一行"),
+            "file",
+        )
+        self.assertEqual(manager.infer_tool_scope("请读取这个文件并总结"), "file")
+
+    def test_normal_chinese_requests_select_expected_runtime_capability(self) -> None:
+        self.assertEqual(manager.infer_tool_scope("帮我搜索一下最新价格"), "web")
+        self.assertEqual(manager.infer_tool_scope("生成一张玻璃狐狸图片"), "3d")
+        self.assertEqual(manager.infer_tool_scope("删除这个文件"), "file")
+        self.assertEqual(manager.infer_tool_scope("运行 npm test"), "file")
+
     def test_runtime_rejects_unknown_branch_after_schema_is_stabilized(self) -> None:
         map_data = {"个人": {"branches": {"喜好偏好": "用户偏好"}}}
         with patch.object(manager, "load_map", return_value=map_data):
