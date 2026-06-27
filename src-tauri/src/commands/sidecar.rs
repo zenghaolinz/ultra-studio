@@ -14,12 +14,8 @@ fn response_excerpt(body: &str) -> String {
     body.chars().take(500).collect()
 }
 
-fn agent_stream_endpoint(use_agent_runtime: bool) -> &'static str {
-    if use_agent_runtime {
-        "/api/agent/runs/stream"
-    } else {
-        "/api/chat/send/stream"
-    }
+fn agent_stream_endpoint() -> &'static str {
+    "/api/agent/runs/stream"
 }
 
 fn translate_agent_event(
@@ -70,9 +66,8 @@ mod tests {
     }
 
     #[test]
-    fn runtime_flag_selects_parallel_agent_endpoint() {
-        assert_eq!(agent_stream_endpoint(true), "/api/agent/runs/stream");
-        assert_eq!(agent_stream_endpoint(false), "/api/chat/send/stream");
+    fn desktop_chat_uses_only_the_agent_runtime_endpoint() {
+        assert_eq!(agent_stream_endpoint(), "/api/agent/runs/stream");
     }
 
     #[test]
@@ -430,7 +425,6 @@ pub async fn send_stream_start(
     vision_enabled: Option<bool>,
     hidden_user_message: Option<bool>,
     remove_message_id: Option<String>,
-    use_agent_runtime: Option<bool>,
 ) -> Result<bool, String> {
     check_ready(&state)?;
 
@@ -438,12 +432,7 @@ pub async fn send_stream_start(
     let app_clone = app.clone();
     let conv_id_for_events = conversation_id.clone();
     let conv_id_for_title = conversation_id.clone();
-    let use_agent_runtime = use_agent_runtime.unwrap_or_else(|| {
-        std::env::var("ULTRA_AGENT_RUNTIME")
-            .map(|value| value != "0" && !value.eq_ignore_ascii_case("legacy"))
-            .unwrap_or(true)
-    });
-    let stream_endpoint = agent_stream_endpoint(use_agent_runtime);
+    let stream_endpoint = agent_stream_endpoint();
 
     let mut body = serde_json::json!({
         "conversation_id": conv_id_for_title,
@@ -502,32 +491,14 @@ pub async fn send_stream_start(
                                         }
                                         match serde_json::from_str::<serde_json::Value>(data) {
                                             Ok(json_val) => {
-                                                if use_agent_runtime {
-                                                    if let Some((event_name, mut payload, terminal)) = translate_agent_event(&json_val) {
-                                                        if let serde_json::Value::Object(ref mut obj) = payload {
-                                                            obj.insert("conversationId".into(), serde_json::Value::String(conv_id_for_events.clone()));
-                                                        }
-                                                        let _ = app_clone.emit(event_name, payload);
-                                                        if terminal {
-                                                            return;
-                                                        }
+                                                if let Some((event_name, mut payload, terminal)) = translate_agent_event(&json_val) {
+                                                    if let serde_json::Value::Object(ref mut obj) = payload {
+                                                        obj.insert("conversationId".into(), serde_json::Value::String(conv_id_for_events.clone()));
                                                     }
-                                                    continue;
-                                                }
-                                                let mut event_val = json_val;
-                                                if let serde_json::Value::Object(ref mut obj) = event_val {
-                                                    obj.insert("conversationId".into(), serde_json::Value::String(conv_id_for_events.clone()));
-                                                }
-                                                if event_val.get("token").is_some() {
-                                                    let _ = app_clone.emit("chat-chunk", event_val);
-                                                } else if event_val.get("status").is_some() {
-                                                    let _ = app_clone.emit("chat-status", event_val);
-                                                } else if event_val.get("done").is_some() {
-                                                    let _ = app_clone.emit("chat-done", event_val);
-                                                    return;
-                                                } else if event_val.get("error").is_some() {
-                                                    let _ = app_clone.emit("chat-error", event_val);
-                                                    return;
+                                                    let _ = app_clone.emit(event_name, payload);
+                                                    if terminal {
+                                                        return;
+                                                    }
                                                 }
                                             }
                                             Err(_) => {}

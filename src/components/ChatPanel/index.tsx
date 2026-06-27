@@ -439,18 +439,8 @@ function parseAgentTrace(content: string): AgentTrace | null {
   }
 }
 
-const textualToolBlockPattern = /<\s*\|\s*\|\s*DSML\s*\|\s*\|\s*tool_calls\s*>[\s\S]*?<\/\s*\|\s*\|\s*DSML\s*\|\s*\|\s*tool_calls\s*>/gi;
-const textualToolMarkerPattern = /<\s*\/?\s*\|\s*\|\s*DSML\s*\|\s*\|/i;
-
-function stripTextualToolBlocks(content: string) {
-  const stripped = content.replace(textualToolBlockPattern, "").trim();
-  const markerIndex = stripped.search(textualToolMarkerPattern);
-  if (markerIndex < 0) return stripped;
-  return stripped.slice(0, markerIndex).trim();
-}
-
 function stripActionBlocks(content: string) {
-  return stripTextualToolBlocks(content)
+  return content
     .replace(/\[PATH_RESOLUTION_REQUIRED\][\s\S]*?\[\/PATH_RESOLUTION_REQUIRED\]/g, "")
     .replace(/\[CONFIRM_DELETE_REQUIRED\][\s\S]*?\[\/CONFIRM_DELETE_REQUIRED\]/g, "")
     .replace(/\[CONFIRM_COMMAND_REQUIRED\][\s\S]*?\[\/CONFIRM_COMMAND_REQUIRED\]/g, "")

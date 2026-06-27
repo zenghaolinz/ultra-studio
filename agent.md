@@ -42,12 +42,9 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Chat direct image/3D generation flows: `sidecar/services/chat_direct_media.py`
   - Chat document-to-image/3D asset flows: `sidecar/services/chat_document_assets.py`
   - Chat folder-to-docx summary flow: `sidecar/services/chat_folder_summary.py`
-  - Chat LLM router decision flow: `sidecar/services/chat_llm_router.py`
   - Chat router action execution flow: `sidecar/services/chat_router_actions.py`
-  - Chat textual/DSML tool execution helpers: `sidecar/services/chat_textual_tools.py`
   - Chat OpenAI tool-call loop execution: `sidecar/services/chat_tool_loop.py`
   - Chat visual prompt helpers: `sidecar/services/chat_visual_prompts.py`
-  - DSML/textual tool call parsing helpers: `sidecar/services/textual_tool_parser.py`
   - Direct file intent helpers and direct file response formatting: `sidecar/routes/direct_files.py`
   - 3D/generation HTTP routes: `sidecar/routes/asset_3d.py`
   - Generation task CRUD/list/cancel helpers: `sidecar/services/generation_tasks.py`
@@ -127,13 +124,13 @@ Likely disposable tables:
 - Tool availability is selected deterministically from context, then filtered by capability and permission policy. Existing file, web, generation, and queue services remain the execution authority behind adapters.
 - Image, video, and 3D tools enqueue work and return task IDs to the model immediately.
 - Standard mode stops destructive calls with a structured confirmation event. The route adapter formats the existing confirmation-card markers until the frontend consumes structured confirmations directly.
-- Set `ULTRA_AGENT_RUNTIME=legacy` (or `0`) before starting the desktop app to temporarily route chat through `/api/chat/send/stream`.
-- The legacy LLM router and textual/DSML path are compatibility-only. Do not add new behavior there; remove them after the default runtime passes real-provider smoke tests.
+- Legacy `/api/chat/send` and `/api/chat/send/stream` URLs are thin adapters over the same single-loop runtime; they no longer contain a second orchestrator.
+- The per-message LLM router and textual/DSML tool path were removed after real-provider smoke tests passed.
 
 ## Near-Term Priorities
 
 1. Add VRAM-aware scheduling and explicit concurrency policies to the task center.
-2. Remove the legacy LLM router and global textual/DSML buffering after real-provider cutover validation; keep `sidecar/routes/chat.py` shrinking until it can be deleted.
+2. Move external clients from the legacy chat URLs to `/api/agent/runs/stream`, then remove the thin compatibility route.
 3. Componentize settings into ComfyUI runtime, model providers, generation queue, MCP/tools, and app data sections.
 4. Expand real-runtime integration tests for multi-conversation chat and queued ComfyUI generation.
 
@@ -170,9 +167,7 @@ Likely disposable tables:
 - Keep direct image/3D generation and previous-asset media modification flows out of `sidecar/routes/chat.py`; use `sidecar/services/chat_direct_media.py` for these small ComfyUI dispatch paths.
 - Keep document-to-image/3D asset intent detection, prompt building, and generation dispatch out of `sidecar/routes/chat.py`; use `sidecar/services/chat_document_assets.py`.
 - Keep folder-to-docx summary orchestration out of `sidecar/routes/chat.py`; use `sidecar/services/chat_folder_summary.py`.
-- Keep LLM router decision prompting/parsing out of `sidecar/routes/chat.py`; use `sidecar/services/chat_llm_router.py`.
 - Keep router action execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_actions.py`.
-- Keep DSML/textual tool parsing and execution out of `sidecar/routes/chat.py`; use `sidecar/services/textual_tool_parser.py` for parsing only, and `sidecar/services/chat_textual_tools.py` for textual tool dispatch and answer synthesis.
 - Keep OpenAI tool-call loop execution out of `sidecar/routes/chat.py`; use `sidecar/services/chat_tool_loop.py`. The loop includes an explicit result-verification prompt after each tool batch: the model should inspect tool results against the user request, call more tools when results are incomplete or wrong, and only answer when the task is complete or waiting for confirmation/user input.
 - SQLite migrations in `sidecar/db/sqlite.py` are transaction-protected; keep future schema changes inside that rollback-safe flow.
 - Run `npm run check` after frontend changes and `cargo check --manifest-path src-tauri/Cargo.toml` after Tauri command changes.
