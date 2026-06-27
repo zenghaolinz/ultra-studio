@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from db.sqlite import init_db, close_db
-from routes import chat, memory, config, persona, asset_3d, conversations, comfyui, generation_tasks, mcp
+from routes import agent_runs, chat, memory, config, persona, asset_3d, conversations, comfyui, generation_tasks, mcp
 from services.generation_tasks import mark_interrupted_generation_tasks
 
 
@@ -49,6 +49,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(agent_runs.router)
 app.include_router(conversations.router, prefix="/api/chat", tags=["conversations"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
