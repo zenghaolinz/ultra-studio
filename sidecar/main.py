@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from db.sqlite import init_db, close_db
-from routes import chat, memory, config, persona, asset_3d, conversations, comfyui, mcp
+from routes import chat, memory, config, persona, asset_3d, conversations, comfyui, generation_tasks, mcp
 from services.generation_tasks import mark_interrupted_generation_tasks
 
 
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-app = FastAPI(title="Ultra Studio Sidecar", version="0.5.6", lifespan=lifespan)
+app = FastAPI(title="Ultra Studio Sidecar", version="0.7.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,6 +54,7 @@ app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(persona.router, prefix="/api/config", tags=["persona"])
 app.include_router(asset_3d.router)
+app.include_router(generation_tasks.router)
 app.include_router(comfyui.router, prefix="/api/comfyui", tags=["comfyui"])
 app.include_router(mcp.router, prefix="/api/mcp", tags=["mcp"])
 

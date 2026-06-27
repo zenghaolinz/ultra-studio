@@ -178,6 +178,10 @@ pub fn run() {
             client,
             ready: Mutex::new(false),
         })
+        .setup(|app| {
+            commands::generation_events::spawn_generation_event_bridge(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::sidecar::init_sidecar,
             commands::sidecar::list_projects,
@@ -221,6 +225,8 @@ pub fn run() {
             commands::sidecar::generate_wan_video,
             commands::sidecar::create_showcase_materials,
             commands::sidecar::list_generation_tasks,
+            commands::sidecar::cancel_generation_task,
+            commands::sidecar::retry_generation_task,
             commands::sidecar::generate_3d_text_stream,
             commands::sidecar::generate_3d_image_stream,
             commands::sidecar::generate_3d_fusion_stream,

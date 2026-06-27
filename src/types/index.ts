@@ -187,6 +187,9 @@ export interface GenerationTask {
   inputPaths: string[];
   outputPaths: Record<string, string | null | undefined>;
   error: string;
+  errorCode: string;
+  requestPayload: Record<string, unknown>;
+  retryOfTaskId?: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;

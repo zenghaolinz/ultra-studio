@@ -1,8 +1,10 @@
 ﻿import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/appStore";
+import { useGenerationTaskStore } from "../../stores/generationTaskStore";
 import type { GenerationTask, ToolActivityEvent } from "../../types";
 import ModelPreview from "../ThreeDStudio/ModelPreview";
 import Icon from "../Icon";
@@ -593,33 +595,11 @@ function taskOutputPath(task: GenerationTask) {
 
 function ChatGenerationTasks({ taskIds, onToast }: { taskIds: string[]; onToast: (text: string) => void }) {
   const { text } = useLanguage();
-  const [tasks, setTasks] = useState<GenerationTask[]>([]);
-
-  const refresh = useCallback(async () => {
-    if (taskIds.length === 0) {
-      setTasks([]);
-      return;
-    }
-    try {
-      const result = await invoke<GenerationTask[]>("list_generation_tasks", { limit: 80 });
-      const wanted = new Set(taskIds);
-      setTasks(result.filter((task) => wanted.has(task.id)));
-    } catch {
-      setTasks([]);
-    }
-  }, [taskIds]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    if (taskIds.length === 0) return;
-    const hasPending = tasks.length === 0 || tasks.some((task) => task.status === "queued" || task.status === "running");
-    if (!hasPending) return;
-    const timer = window.setInterval(refresh, 2500);
-    return () => window.clearInterval(timer);
-  }, [refresh, taskIds.length, tasks]);
+  const allTasks = useGenerationTaskStore((state) => state.tasks);
+  const isRequestedTask = useCallback((task: GenerationTask) => taskIds.includes(task.id), [taskIds]);
+  const tasks = useMemo(() => {
+    return allTasks.filter(isRequestedTask);
+  }, [allTasks, isRequestedTask]);
 
   if (taskIds.length === 0 || tasks.length === 0) return null;
 
@@ -645,9 +625,11 @@ function ChatGenerationTaskCard({ task, onToast }: { task: GenerationTask; onToa
       ? text("\u5df2\u5b8c\u6210", "Complete")
       : task.status === "error"
         ? text("\u5931\u8d25", "Failed")
-        : task.status === "running"
+      : task.status === "running"
           ? text("\u751f\u6210\u4e2d", "Running")
-          : text("\u6392\u961f\u4e2d", "Queued");
+          : task.status === "cancelled"
+            ? text("\u5df2\u53d6\u6d88", "Cancelled")
+            : text("\u6392\u961f\u4e2d", "Queued");
   const statusColor =
     task.status === "success"
       ? "var(--success)"

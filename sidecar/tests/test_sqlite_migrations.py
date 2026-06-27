@@ -13,6 +13,40 @@ from db import sqlite as sqlite_db
 
 
 class SqliteMigrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_generation_retry_migration_adds_required_columns(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            db_path = Path(temp_dir) / "agent.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE generation_tasks (
+                        id TEXT PRIMARY KEY,
+                        task_type TEXT NOT NULL,
+                        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'success', 'error', 'cancelled')),
+                        conversation_id TEXT DEFAULT NULL,
+                        queue_position INTEGER DEFAULT NULL,
+                        prompt TEXT DEFAULT '',
+                        quality_mode TEXT DEFAULT '',
+                        input_paths TEXT DEFAULT '[]',
+                        output_paths TEXT DEFAULT '{}',
+                        error TEXT DEFAULT '',
+                        created_at TEXT,
+                        updated_at TEXT,
+                        completed_at TEXT
+                    );
+                    """
+                )
+                conn.commit()
+
+            with patch.object(sqlite_db, "DB_PATH", str(db_path)):
+                await sqlite_db._migrate()
+
+            with sqlite3.connect(db_path) as conn:
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(generation_tasks)")}
+            self.assertTrue(
+                {"request_payload", "retry_of_task_id", "error_code"}.issubset(columns)
+            )
+
     async def test_model_context_window_migration_adds_column(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             db_path = Path(temp_dir) / "agent.db"

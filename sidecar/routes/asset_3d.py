@@ -304,7 +304,7 @@ class ShowcaseMaterialRequest(BaseModel):
 async def generate_3d_text(req: ThreeDTextRequest):
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
-    task_id = await _create_task("text_to_3d", req.prompt, req.quality_mode, [])
+    task_id = await _create_task("text_to_3d", req.prompt, req.quality_mode, [], request_payload=req.model_dump())
     try:
         loop = asyncio.get_event_loop()
         result_2d, result_normal, result_uv, model_path = await loop.run_in_executor(
@@ -341,7 +341,7 @@ async def generate_3d_text(req: ThreeDTextRequest):
 async def generate_3d_image(req: ThreeDImageRequest):
     if not os.path.exists(req.image_path):
         raise HTTPException(status_code=400, detail="Image file not found")
-    task_id = await _create_task("image_to_3d", "", req.quality_mode, [req.image_path])
+    task_id = await _create_task("image_to_3d", "", req.quality_mode, [req.image_path], request_payload=req.model_dump())
     try:
         loop = asyncio.get_event_loop()
         result_2d, result_normal, result_uv, model_path = await loop.run_in_executor(
@@ -382,7 +382,7 @@ async def generate_3d_fusion(req: ThreeDFusionRequest):
         raise HTTPException(status_code=400, detail="Image 2 not found")
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
-    task_id = await _create_task("fusion_to_3d", req.prompt, req.quality_mode, [req.image1_path, req.image2_path])
+    task_id = await _create_task("fusion_to_3d", req.prompt, req.quality_mode, [req.image1_path, req.image2_path], request_payload=req.model_dump())
     try:
         loop = asyncio.get_event_loop()
         result_2d, result_normal, result_uv, model_path = await loop.run_in_executor(
@@ -421,7 +421,7 @@ async def generate_3d_fusion(req: ThreeDFusionRequest):
 @router.post("/generate/multiview")
 async def generate_3d_multiview(req: ThreeDMultiviewRequest):
     image_paths = _validate_multiview_paths(req.image_paths)
-    task_id = await _create_task("multiview_to_3d", "Hy3D 多视角生成", req.quality_mode, [path for path in image_paths if path])
+    task_id = await _create_task("multiview_to_3d", "Hy3D 多视角生成", req.quality_mode, [path for path in image_paths if path], request_payload=req.model_dump())
     try:
         loop = asyncio.get_event_loop()
         result_2d, result_normal, result_uv, model_path = await loop.run_in_executor(
@@ -455,7 +455,7 @@ async def generate_3d_multiview(req: ThreeDMultiviewRequest):
 async def improve_image(req: ImproveImageRequest):
     if not os.path.exists(req.image_path):
         raise HTTPException(status_code=400, detail="Image file not found")
-    task_id = await _create_task("improve_image", req.improvement_prompt, req.quality_mode, [req.image_path])
+    task_id = await _create_task("improve_image", req.improvement_prompt, req.quality_mode, [req.image_path], request_payload=req.model_dump())
     try:
         loop = asyncio.get_event_loop()
         improved_path = await loop.run_in_executor(
@@ -484,7 +484,7 @@ async def improve_image(req: ImproveImageRequest):
 async def generate_image(req: GenerateImageRequest):
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
-    task_id = await _create_task("generate_image", req.prompt, req.quality_mode, [])
+    task_id = await _create_task("generate_image", req.prompt, req.quality_mode, [], request_payload=req.model_dump())
     try:
         loop = asyncio.get_event_loop()
         image_path = await loop.run_in_executor(
@@ -517,6 +517,7 @@ async def generate_multiview_images(req: GenerateMultiviewImagesRequest):
         req.prompt,
         req.quality_mode,
         [req.image_path],
+        request_payload=req.model_dump(),
     )
     try:
         loop = asyncio.get_event_loop()
@@ -549,6 +550,7 @@ async def generate_video(req: GenerateVideoRequest):
         req.prompt,
         req.quality_mode,
         [req.image_path] if req.image_path else [],
+        request_payload=req.model_dump(),
     )
     try:
         duration = max(1, min(int(req.duration_seconds or 4), 5))
@@ -587,6 +589,7 @@ async def create_showcase_materials(req: ShowcaseMaterialRequest):
         req.prompt,
         "",
         [path for path in [req.model_path, req.image_path] if path],
+        request_payload=req.model_dump(),
     )
     try:
         project_dir = os.environ.get("ULTRA_STUDIO_PROJECT_DIR") or os.getcwd()

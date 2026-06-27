@@ -28,11 +28,12 @@ class GenerationTaskRecoveryIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 records = await generation_tasks.list_generation_tasks(10)
 
             by_id = {record["id"]: record for record in records}
-            self.assertEqual(count, 1)
+            self.assertEqual(count, 2)
             self.assertEqual(by_id[running_id]["status"], "error")
             self.assertEqual(by_id[running_id]["error"], "restart")
             self.assertTrue(by_id[running_id]["completedAt"])
-            self.assertEqual(by_id[queued_id]["status"], "queued")
+            self.assertEqual(by_id[queued_id]["status"], "error")
+            self.assertEqual(by_id[queued_id]["errorCode"], "sidecar_restarted_before_start")
 
 
 if __name__ == "__main__":

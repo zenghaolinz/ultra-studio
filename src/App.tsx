@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "./stores/appStore";
+import { useGenerationTaskStore } from "./stores/generationTaskStore";
 import ConversationList from "./components/ConversationList";
 import ChatPanel from "./components/ChatPanel";
 import ImageStudio from "./components/ImageStudio";
@@ -9,6 +10,7 @@ import Settings from "./components/Settings";
 import Icon from "./components/Icon";
 import ComfyStatus from "./components/ComfyStatus";
 import { useLanguage } from "./i18n";
+import GenerationTaskCenter from "./components/GenerationTaskCenter";
 
 function errorMessage(e: unknown) {
   return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
@@ -18,6 +20,8 @@ export default function App() {
   const { text } = useLanguage();
   const [showSettings, setShowSettings] = useState(false);
   const [sidecarError, setSidecarError] = useState<string | null>(null);
+  const [showTasks, setShowTasks] = useState(false);
+  const initializeTasks = useGenerationTaskStore((state) => state.initialize);
   const {
     initSidecar,
     sidecarReady,
@@ -37,8 +41,9 @@ export default function App() {
     if (sidecarReady) {
       loadProjects();
       loadConversations();
+      void initializeTasks().catch((error) => console.error("Failed to initialize generation tasks", error));
     }
-  }, [sidecarReady, loadConversations, loadProjects]);
+  }, [sidecarReady, loadConversations, loadProjects, initializeTasks]);
 
   const retrySidecar = () => {
     setSidecarError(null);
@@ -159,6 +164,16 @@ export default function App() {
           <Settings onClose={() => setShowSettings(false)} />
         </aside>
       )}
+
+      <button
+        className="tool-button"
+        onClick={() => setShowTasks((visible) => !visible)}
+        style={{ position: "fixed", right: 18, bottom: 18, zIndex: 80, height: 38 }}
+      >
+        <Icon name="clock" size={15} />
+        {text("任务中心", "Task center")}
+      </button>
+      {showTasks && <GenerationTaskCenter onClose={() => setShowTasks(false)} />}
 
       {showPersonaModal && !showSettings && workspace === "agent" && (
         <div

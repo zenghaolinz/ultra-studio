@@ -1242,7 +1242,7 @@ pub async fn list_generation_tasks(
     let client = &state.client;
     let safe_limit = limit.unwrap_or(30).clamp(1, 100);
     let resp = client
-        .get(format!("{}/api/3d/tasks", SIDECAR_URL))
+        .get(format!("{}/api/generation/tasks", SIDECAR_URL))
         .query(&[("limit", safe_limit)])
         .send()
         .await
@@ -1251,6 +1251,46 @@ pub async fn list_generation_tasks(
     let body = resp.text().await.unwrap_or_else(|_| "Unknown error".into());
     if !status.is_success() {
         return Err(format!("List generation tasks failed ({}): {}", status, body));
+    }
+    serde_json::from_str(&body).map_err(|e| format!("Parse error: {}", e))
+}
+
+#[tauri::command]
+pub async fn cancel_generation_task(
+    state: State<'_, SidecarState>,
+    task_id: String,
+) -> Result<serde_json::Value, String> {
+    check_ready(&state)?;
+    let resp = state
+        .client
+        .post(format!("{}/api/generation/tasks/{}/cancel", SIDECAR_URL, task_id))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Cancel task failed ({}): {}", status, body));
+    }
+    serde_json::from_str(&body).map_err(|e| format!("Parse error: {}", e))
+}
+
+#[tauri::command]
+pub async fn retry_generation_task(
+    state: State<'_, SidecarState>,
+    task_id: String,
+) -> Result<serde_json::Value, String> {
+    check_ready(&state)?;
+    let resp = state
+        .client
+        .post(format!("{}/api/generation/tasks/{}/retry", SIDECAR_URL, task_id))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Retry task failed ({}): {}", status, body));
     }
     serde_json::from_str(&body).map_err(|e| format!("Parse error: {}", e))
 }

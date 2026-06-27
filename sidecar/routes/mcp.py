@@ -24,7 +24,7 @@ async def mcp_jsonrpc(body: dict):
             request_id,
             {
                 "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "ultra-studio-sidecar", "version": "0.6.10"},
+                "serverInfo": {"name": "ultra-studio-sidecar", "version": "0.7.0"},
                 "capabilities": {"tools": {}},
             },
         )

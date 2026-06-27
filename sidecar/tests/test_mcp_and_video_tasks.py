@@ -28,6 +28,9 @@ CREATE TABLE generation_tasks (
     input_paths TEXT DEFAULT '[]',
     output_paths TEXT DEFAULT '{}',
     error TEXT DEFAULT '',
+    error_code TEXT DEFAULT '',
+    request_payload TEXT DEFAULT '{}',
+    retry_of_task_id TEXT DEFAULT NULL,
     created_at TEXT,
     updated_at TEXT,
     completed_at TEXT

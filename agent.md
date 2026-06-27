@@ -110,14 +110,20 @@ Likely disposable tables:
 - `message_tool_events`
 - `generation_tasks`
 
+## 0.7.0 Generation Task Center
+
+- Generation task mutations publish committed snapshots through `sidecar/services/generation_events.py`.
+- `sidecar/routes/generation_tasks.py` exposes the snapshot, SSE, per-task cancel, and retry boundary.
+- Tauri forwards task events to the shared Zustand store in `src/stores/generationTaskStore.ts`.
+- Chat task cards and generation history consume the shared store; do not restore component-local task polling.
+- Retry runs through `sidecar/services/generation_dispatcher.py` and reuses the newly linked task row.
+
 ## Near-Term Priorities
 
-1. Replace chat-side polling with task status events from the sidecar/Tauri bridge.
-2. Add task cancel/retry controls and persist enough state for recovery after app restart.
-3. Finish a queue center for image, video, model, and ComfyUI jobs with VRAM-aware scheduling.
-4. Continue splitting `sidecar/routes/chat.py` into route handlers, agent orchestration, tool execution, status events, and formatting.
-5. Componentize settings into ComfyUI runtime, model providers, generation queue, MCP/tools, and app data sections.
-6. Add integration tests for multi-conversation chat concurrency and queued generation concurrency.
+1. Add VRAM-aware scheduling and explicit concurrency policies to the task center.
+2. Continue splitting `sidecar/routes/chat.py` into route handlers, agent orchestration, tool execution, status events, and formatting.
+3. Componentize settings into ComfyUI runtime, model providers, generation queue, MCP/tools, and app data sections.
+4. Expand real-runtime integration tests for multi-conversation chat and queued ComfyUI generation.
 
 ## Coding Notes
 

@@ -73,6 +73,9 @@ CREATE_STATEMENTS = [
     input_paths TEXT DEFAULT '[]',
     output_paths TEXT DEFAULT '{}',
     error TEXT DEFAULT '',
+    error_code TEXT DEFAULT '',
+    request_payload TEXT DEFAULT '{}',
+    retry_of_task_id TEXT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP DEFAULT NULL
@@ -128,6 +131,9 @@ MIGRATIONS_PROJECTS = [
 MIGRATIONS_GENERATION_TASKS = [
     "ALTER TABLE generation_tasks ADD COLUMN conversation_id TEXT DEFAULT NULL",
     "ALTER TABLE generation_tasks ADD COLUMN queue_position INTEGER DEFAULT NULL",
+    "ALTER TABLE generation_tasks ADD COLUMN error_code TEXT DEFAULT ''",
+    "ALTER TABLE generation_tasks ADD COLUMN request_payload TEXT DEFAULT '{}'",
+    "ALTER TABLE generation_tasks ADD COLUMN retry_of_task_id TEXT DEFAULT NULL",
 ]
 
 MIGRATIONS_GENERATION_TASK_STATUS_CHECK = [
@@ -143,13 +149,16 @@ MIGRATIONS_GENERATION_TASK_STATUS_CHECK = [
     input_paths TEXT DEFAULT '[]',
     output_paths TEXT DEFAULT '{}',
     error TEXT DEFAULT '',
+    error_code TEXT DEFAULT '',
+    request_payload TEXT DEFAULT '{}',
+    retry_of_task_id TEXT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP DEFAULT NULL
 )""",
     """INSERT INTO generation_tasks
-    (id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error, created_at, updated_at, completed_at)
-    SELECT id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error, created_at, updated_at, completed_at
+    (id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error, error_code, request_payload, retry_of_task_id, created_at, updated_at, completed_at)
+    SELECT id, task_type, status, conversation_id, queue_position, prompt, quality_mode, input_paths, output_paths, error, '', '{}', NULL, created_at, updated_at, completed_at
     FROM generation_tasks_old""",
     "DROP TABLE generation_tasks_old",
 ]

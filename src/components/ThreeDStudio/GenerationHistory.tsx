@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useGenerationTaskStore } from "../../stores/generationTaskStore";
 import type { GenerationTask, GenerationTaskStatus } from "../../types";
 import { useAppStore } from "../../stores/appStore";
 import Icon from "../Icon";
@@ -43,28 +44,16 @@ function firstOutput(task: GenerationTask) {
 
 export default function GenerationHistory() {
   const { text } = useLanguage();
-  const [tasks, setTasks] = useState<GenerationTask[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await invoke<GenerationTask[]>("list_generation_tasks", { limit: 20 });
-      setTasks(result);
-    } catch (e) {
-      setError(typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [showAll, setShowAll] = useState(false);
+  const allTasks = useGenerationTaskStore((state) => state.tasks);
+  const loading = useGenerationTaskStore((state) => !state.hydrated);
+  const error = useGenerationTaskStore((state) => state.error);
+  const hydrate = useGenerationTaskStore((state) => state.hydrate);
+  const refresh = useCallback(() => void hydrate(), [hydrate]);
+  const tasks = allTasks.slice(0, showAll ? 100 : 20);
 
   useEffect(() => {
     refresh();
-    const handler = () => refresh();
-    window.addEventListener("generation-task-updated", handler);
-    return () => window.removeEventListener("generation-task-updated", handler);
   }, [refresh]);
 
   const reusePrompt = (task: GenerationTask) => {
@@ -110,6 +99,11 @@ export default function GenerationHistory() {
         <button className="icon-button" onClick={refresh} disabled={loading} title={text("刷新", "Refresh")} style={{ width: 28, height: 28 }}>
           <Icon name="refresh" size={13} />
         </button>
+        {allTasks.length > 20 && (
+          <button className="tool-button" onClick={() => setShowAll((value) => !value)} style={{ height: 28, fontSize: 10 }}>
+            {showAll ? text("收起", "Collapse") : text("全部", "All")}
+          </button>
+        )}
       </div>
 
       {error && (
