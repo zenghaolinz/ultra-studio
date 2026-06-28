@@ -56,6 +56,23 @@ class ConfirmationLoop:
 
 
 class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
+    def test_text_only_model_keeps_text_and_removes_image_parts(self) -> None:
+        messages = [
+            {"role": "system", "content": "system"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "edit this"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                ],
+            },
+        ]
+
+        adapted = agent_runs._adapt_messages_for_model(messages, supports_vision=False)
+
+        self.assertEqual(adapted[1]["content"], "edit this")
+        self.assertEqual(messages[1]["content"][1]["type"], "image_url")
+
     async def test_mixed_image_reference_injects_both_sources(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             uploaded = Path(temp_dir) / "uploaded.png"

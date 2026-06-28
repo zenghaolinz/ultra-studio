@@ -24,6 +24,7 @@ from services.conversation_artifacts import (
     list_artifacts,
     record_uploaded_images,
 )
+from services.chat_router import model_capabilities
 from services.model_context import fit_messages_to_context
 
 router = APIRouter(prefix="/api/agent/runs", tags=["agent-runs"])
@@ -144,6 +145,24 @@ def _append_system_context(messages: list[dict], context: str) -> list[dict]:
     return [{"role": "system", "content": context}, *updated]
 
 
+def _adapt_messages_for_model(messages: list[dict], *, supports_vision: bool) -> list[dict]:
+    if supports_vision:
+        return messages
+    adapted = []
+    for message in messages:
+        updated = dict(message)
+        content = updated.get("content")
+        if isinstance(content, list):
+            text_parts = [
+                str(item.get("text") or "")
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            ]
+            updated["content"] = "\n".join(part for part in text_parts if part)
+        adapted.append(updated)
+    return adapted
+
+
 async def _prepare_run(req: ChatRequest):
     db = await get_db()
     await remove_internal_source_message(db, req)
@@ -167,6 +186,13 @@ async def _prepare_run(req: ChatRequest):
 
     artifact_context, resolved_artifacts = await _artifact_context_for_request(req, db)
     context_messages = _append_system_context(context_messages, artifact_context)
+    context_messages = _adapt_messages_for_model(
+        context_messages,
+        supports_vision=model_capabilities(
+            provider_config,
+            req.vision_enabled,
+        )["supports_vision"],
+    )
     capabilities = _capabilities_for_tools(
         legacy_tools,
         has_resolved_images=bool(resolved_artifacts),
