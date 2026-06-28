@@ -1,6 +1,6 @@
 {
   "name": "ultra-studio",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Ultra Studio - Agent Chat + 3D Asset Generator",
   "type": "module",
   "scripts": {

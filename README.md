@@ -1,12 +1,14 @@
 # Ultra Studio
 
-Ultra Studio 是一个 Tauri 桌面应用，前端使用 React/Vite，后端使用 Python FastAPI sidecar，面向 Agent 对话、记忆管理、图片生成和 3D 资产生成工作流。
+Ultra Studio 是一个 Tauri 桌面应用，前端使用 React/Vite，后端使用 Python FastAPI sidecar，面向 Agent 对话、本地文件处理、图片生成和 3D 资产生成工作流。
+
+当前版本：`0.7.1`
 
 ## 项目结构
 
 - `src/`：React 前端界面和 Zustand 状态管理。
 - `src-tauri/`：Tauri 桌面壳、Rust 命令桥接和应用配置。
-- `sidecar/`：Python FastAPI 后端，负责模型配置、记忆、文件工具、ComfyUI/3D 生成接口。
+- `sidecar/`：Python FastAPI 后端，负责模型配置、会话上下文、文件工具、ComfyUI/3D 生成接口。
 - `docs/`：项目展示、讲稿、演示视频和比赛材料。
 - `scripts/`：文档生成等辅助脚本。
 
@@ -84,6 +86,19 @@ cargo check --manifest-path src-tauri/Cargo.toml
 - 复用历史提示词与质量模式
 - 将历史输出恢复到当前预览
 - 打开输出文件所在位置
+
+## 0.7.1 单循环 Agent 与通用 Artifact
+
+聊天链路已迁移到单循环 Agent Runtime，由模型在同一个运行循环中选择并连续调用文件、联网和生成工具，减少旧路由层的重复判断与额外等待。
+
+本版本引入会话级 Artifact Ledger：
+
+- 统一记录上传、生成和工具创建的图片、文档、代码、音频、视频、3D 模型、压缩包及普通文件。
+- Artifact 关联用户消息、工具调用或生成任务，可可靠理解“上面的文件”“我上传的 PDF”“之前生成的图片/代码”等引用。
+- 历史引用向模型注入经过确定性解析的真实本地路径，不让模型猜测或交换路径。
+- 新接口使用 `attachment_paths`；旧桌面端的 `image_paths` 字段继续兼容。
+
+运行时上下文也进行了收敛：前端配置的人设继续作为 system prompt 生效；旧的全局记忆地图、LTM 检索及 `recall_memory`/`save_memory` 工具不再进入活动 Agent 链路。当前会话的可见消息历史仍会保留。这样减少了每次请求携带的提示内容和不必要的记忆检索，有助于降低首字延迟。
 
 ## 0.7.0 生成任务中心
 
