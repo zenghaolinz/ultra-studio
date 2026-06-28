@@ -18,7 +18,12 @@ from services.chat_messages import (
     save_visible_user_message,
 )
 from services.chat_provider_client import get_provider_client
-from services.conversation_artifacts import record_uploaded_images
+from services.artifact_references import build_artifact_context, resolve_artifact_references
+from services.conversation_artifacts import (
+    backfill_generation_artifacts,
+    list_artifacts,
+    record_uploaded_images,
+)
 from services.model_context import fit_messages_to_context
 
 router = APIRouter(prefix="/api/agent/runs", tags=["agent-runs"])
@@ -55,7 +60,11 @@ def _openai_tools(definitions) -> list[dict]:
     ]
 
 
-def _capabilities_for_tools(tools: list[dict]) -> set[str]:
+def _capabilities_for_tools(
+    tools: list[dict],
+    *,
+    has_resolved_images: bool = False,
+) -> set[str]:
     names = {
         str((tool.get("function") or {}).get("name") or "")
         for tool in tools
@@ -66,6 +75,8 @@ def _capabilities_for_tools(tools: list[dict]) -> set[str]:
     if names & WEB_TOOL_NAMES:
         capabilities.add("web")
     if names & GENERATION_TOOL_NAMES:
+        capabilities.add("generation")
+    if has_resolved_images:
         capabilities.add("generation")
     return capabilities
 
@@ -111,6 +122,28 @@ async def _register_request_uploads(req: ChatRequest, message_id: str | None, db
     )
 
 
+async def _artifact_context_for_request(req: ChatRequest, db):
+    await backfill_generation_artifacts(req.conversation_id, db=db)
+    artifacts = await list_artifacts(
+        req.conversation_id,
+        kind="image",
+        db=db,
+    )
+    resolved = resolve_artifact_references(req.content, artifacts)
+    return build_artifact_context(resolved, artifacts), resolved
+
+
+def _append_system_context(messages: list[dict], context: str) -> list[dict]:
+    if not context:
+        return messages
+    updated = [dict(message) for message in messages]
+    for message in updated:
+        if message.get("role") == "system" and isinstance(message.get("content"), str):
+            message["content"] = message["content"] + "\n\n" + context
+            return updated
+    return [{"role": "system", "content": context}, *updated]
+
+
 async def _prepare_run(req: ChatRequest):
     db = await get_db()
     await remove_internal_source_message(db, req)
@@ -132,7 +165,12 @@ async def _prepare_run(req: ChatRequest):
         ]
         legacy_tools = []
 
-    capabilities = _capabilities_for_tools(legacy_tools)
+    artifact_context, resolved_artifacts = await _artifact_context_for_request(req, db)
+    context_messages = _append_system_context(context_messages, artifact_context)
+    capabilities = _capabilities_for_tools(
+        legacy_tools,
+        has_resolved_images=bool(resolved_artifacts),
+    )
     registry = build_runtime_registry(req.conversation_id, req.permission_mode)
     definitions = registry.definitions(capabilities)
     messages = fit_messages_to_context(

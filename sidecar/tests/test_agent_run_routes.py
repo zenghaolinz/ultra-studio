@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -55,6 +56,52 @@ class ConfirmationLoop:
 
 
 class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mixed_image_reference_injects_both_sources(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            uploaded = Path(temp_dir) / "uploaded.png"
+            generated = Path(temp_dir) / "generated.png"
+            uploaded.write_bytes(b"image")
+            generated.write_bytes(b"image")
+            artifacts = [
+                {"id": "u1", "kind": "image", "source": "uploaded", "path": str(uploaded), "status": "available", "sequence": 1, "prompt": ""},
+                {"id": "g1", "kind": "image", "source": "generated", "path": str(generated), "status": "available", "sequence": 2, "prompt": "cube"},
+            ]
+            req = ChatRequest(
+                conversation_id="conversation-1",
+                content="把我上传的图片和之前生成的图片融合",
+            )
+            with patch.object(
+                agent_runs, "backfill_generation_artifacts", AsyncMock()
+            ), patch.object(
+                agent_runs, "list_artifacts", AsyncMock(return_value=artifacts)
+            ):
+                context, resolved = await agent_runs._artifact_context_for_request(req, object())
+
+        self.assertEqual([item["id"] for item in resolved], ["u1", "g1"])
+        self.assertIn(str(uploaded), context)
+        self.assertIn(str(generated), context)
+
+    async def test_resolved_image_reference_enables_generation_capability(self) -> None:
+        self.assertEqual(
+            agent_runs._capabilities_for_tools([], has_resolved_images=True),
+            {"generation"},
+        )
+
+    async def test_reference_resolution_backfills_historical_generation_tasks(self) -> None:
+        req = ChatRequest(
+            conversation_id="conversation-1",
+            content="修改之前生成的图片",
+        )
+        db = object()
+        with patch.object(
+            agent_runs, "backfill_generation_artifacts", AsyncMock()
+        ) as backfill, patch.object(
+            agent_runs, "list_artifacts", AsyncMock(return_value=[])
+        ):
+            await agent_runs._artifact_context_for_request(req, db)
+
+        backfill.assert_awaited_once_with("conversation-1", db=db)
+
     async def test_request_uploads_are_registered_with_user_message(self) -> None:
         req = ChatRequest(
             conversation_id="conversation-1",

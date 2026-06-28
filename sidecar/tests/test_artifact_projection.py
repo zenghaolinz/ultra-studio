@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import sys
 import tempfile
@@ -14,6 +15,7 @@ if str(SIDECAR_DIR) not in sys.path:
 from db import sqlite as sqlite_db
 from services import generation_tasks
 from services.conversation_artifacts import (
+    backfill_generation_artifacts,
     list_artifacts,
     project_generation_outputs,
     record_uploaded_images,
@@ -118,6 +120,26 @@ class ArtifactProjectionTests(unittest.IsolatedAsyncioTestCase):
             prompt="blue cube",
             output_paths={"imagePath": "C:/output.png"},
         )
+
+    async def test_backfills_existing_successful_generation_tasks(self) -> None:
+        image = Path(self.temp_dir.name) / "historical.png"
+        image.write_bytes(b"image")
+        await self.db.execute(
+            """
+            INSERT INTO generation_tasks(
+                id, task_type, status, conversation_id, prompt, output_paths
+            ) VALUES (?, 'generate_image', 'success', ?, ?, ?)
+            """,
+            ("historical-task", "conversation-1", "old blue cube", json.dumps({"imagePath": str(image)})),
+        )
+        await self.db.commit()
+
+        await backfill_generation_artifacts("conversation-1", db=self.db)
+        await backfill_generation_artifacts("conversation-1", db=self.db)
+        artifacts = await list_artifacts("conversation-1", db=self.db)
+
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["generationTaskId"], "historical-task")
 
 
 if __name__ == "__main__":

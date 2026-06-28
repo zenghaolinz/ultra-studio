@@ -16,6 +16,8 @@ This repo is a Tauri desktop app with a React frontend and a Python sidecar. The
   - Default single-loop agent runtime: `sidecar/agent_runtime/`
   - Default agent SSE route: `sidecar/routes/agent_runs.py`
   - Legacy chat compatibility route: `sidecar/routes/chat.py`
+  - Conversation artifact ledger and projection: `sidecar/services/conversation_artifacts.py`
+  - Deterministic media reference resolver: `sidecar/services/artifact_references.py`
   - Chat response formatting helpers: `sidecar/services/chat_response_formatters.py`
   - Chat confirmation parsing/execution helpers: `sidecar/services/chat_confirmations.py`
   - Chat confirmed delete/delete-then-create flow: `sidecar/services/chat_delete_flow.py`
@@ -126,6 +128,8 @@ Likely disposable tables:
 - Standard mode stops destructive calls with a structured confirmation event. The route adapter formats the existing confirmation-card markers until the frontend consumes structured confirmations directly.
 - Legacy `/api/chat/send` and `/api/chat/send/stream` URLs are thin adapters over the same single-loop runtime; they no longer contain a second orchestrator.
 - The per-message LLM router and textual/DSML tool path were removed after real-provider smoke tests passed.
+- Uploaded and generated media are indexed in `conversation_artifacts` with message/tool/task provenance. Resolve phrases such as “上面这张图”, “我上传的图片”, and “之前生成的图片” through `artifact_references.py`; never recover canonical tool paths by asking the model to guess from prose.
+- Successful historical generation tasks are lazily projected into the ledger, so existing task-center outputs remain referenceable after upgrade.
 
 ## Near-Term Priorities
 

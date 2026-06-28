@@ -1,6 +1,7 @@
 import uuid
 import os
 import sqlite3
+import json
 from typing import Any
 
 from db import sqlite as sqlite_db
@@ -211,3 +212,32 @@ def project_generation_outputs_sync(
                     ),
                 )
         connection.commit()
+
+
+async def backfill_generation_artifacts(
+    conversation_id: str,
+    *,
+    db=None,
+) -> None:
+    connection = db or await get_db()
+    rows = await connection.execute_fetchall(
+        """
+        SELECT id, prompt, output_paths
+        FROM generation_tasks
+        WHERE conversation_id = ? AND status = 'success'
+        ORDER BY datetime(created_at) ASC, id ASC
+        """,
+        (conversation_id,),
+    )
+    for row in rows:
+        try:
+            output_paths = json.loads(row["output_paths"] or "{}")
+        except (TypeError, ValueError):
+            output_paths = {}
+        await project_generation_outputs(
+            conversation_id,
+            generation_task_id=row["id"],
+            prompt=row["prompt"] or "",
+            output_paths=output_paths,
+            db=connection,
+        )
