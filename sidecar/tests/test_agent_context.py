@@ -27,7 +27,7 @@ class AgentContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(infer_agent_capabilities("search the web"), {"web"})
         self.assertEqual(infer_agent_capabilities("create a Python project"), {"files"})
 
-    async def test_context_is_conversation_scoped_and_excludes_global_memory(self) -> None:
+    async def test_context_uses_persona_but_excludes_global_memory(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             db_path = Path(temp_dir) / "agent.db"
             original_path = sqlite_db.DB_PATH
@@ -43,7 +43,7 @@ class AgentContextTests(unittest.IsolatedAsyncioTestCase):
                 [("current", "current"), ("other", "other")],
             )
             await db.execute(
-                "INSERT INTO persona(id, content) VALUES (1, 'GLOBAL PERSONA MUST NOT LEAK')"
+                "INSERT INTO persona(id, content) VALUES (1, 'FRONTEND PERSONA PROMPT')"
             )
             await db.executemany(
                 """
@@ -70,7 +70,7 @@ class AgentContextTests(unittest.IsolatedAsyncioTestCase):
 
         rendered = "\n".join(str(message["content"]) for message in messages)
         self.assertIn("current conversation fact", rendered)
-        self.assertNotIn("GLOBAL PERSONA MUST NOT LEAK", rendered)
+        self.assertIn("FRONTEND PERSONA PROMPT", rendered)
         self.assertNotIn("hidden memory payload", rendered)
         self.assertNotIn("other conversation secret", rendered)
         self.assertEqual(

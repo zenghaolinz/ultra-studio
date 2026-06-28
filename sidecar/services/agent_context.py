@@ -93,6 +93,17 @@ async def build_agent_context(
     include_image_content: bool = False,
     history_limit: int = 20,
 ) -> list[dict[str, Any]]:
+    system_content = SYSTEM_CONTRACT
+    try:
+        persona_rows = await db.execute_fetchall(
+            "SELECT content FROM persona WHERE id = 1 LIMIT 1"
+        )
+    except Exception:
+        persona_rows = []
+    persona = str(persona_rows[0]["content"] or "").strip() if persona_rows else ""
+    if persona:
+        system_content += f"\n\n[User-configured persona]\n{persona}"
+
     clauses = ["conversation_id = ?", "(visible IS NULL OR visible = 1)"]
     parameters: list[Any] = [conversation_id]
     if current_message_id:
@@ -107,7 +118,7 @@ async def build_agent_context(
         """,
         tuple(parameters),
     )
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_CONTRACT}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
     messages.extend(
         {"role": row["role"], "content": row["content"]}
         for row in reversed(rows)

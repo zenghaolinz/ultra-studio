@@ -124,7 +124,7 @@ Likely disposable tables:
 - Tauri chat streaming defaults to `POST /api/agent/runs/stream`.
 - The runtime in `sidecar/agent_runtime/` uses one primary model/tool loop. Ordinary chat does not call a separate LLM router and text deltas are not buffered for DSML detection.
 - Tool availability is selected deterministically from context, then filtered by capability and permission policy. Existing file, web, generation, and queue services remain the execution authority behind adapters.
-- The active runtime context is conversation-scoped. Build it with `sidecar/services/agent_context.py`; do not read persona, the global memory map, LTM files, activated memory, or recall/save-memory tools. `stm_entries` is retained only as message history filtered by the current `conversation_id` and visible messages.
+- Build active runtime context with `sidecar/services/agent_context.py`. The frontend-configured `persona` is a static system prompt and remains active. Do not read the global memory map, LTM files, activated memory, or recall/save-memory tools. `stm_entries` is retained only as message history filtered by the current `conversation_id` and visible messages.
 - Image, video, and 3D tools enqueue work and return task IDs to the model immediately.
 - Standard mode stops destructive calls with a structured confirmation event. The route adapter formats the existing confirmation-card markers until the frontend consumes structured confirmations directly.
 - Legacy `/api/chat/send` and `/api/chat/send/stream` URLs are thin adapters over the same single-loop runtime; they no longer contain a second orchestrator.

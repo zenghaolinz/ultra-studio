@@ -2,7 +2,7 @@
 
 ## Decision
 
-The active agent runtime owns only conversation-scoped context. It must not read persona rows, the global memory map, long-term-memory files, activated memory, or recall/save-memory tools. Existing memory APIs and stored data remain available for backward compatibility, but they are outside the active runtime dependency graph.
+The active agent runtime owns conversation-scoped context plus the frontend-configured persona system prompt. It must not read the global memory map, long-term-memory files, activated memory, or recall/save-memory tools. Existing memory APIs and stored data remain available for backward compatibility, but they are outside the active runtime dependency graph.
 
 Conversation history in `stm_entries` is retained because it is message history scoped by `conversation_id`, not global memory.
 
@@ -10,12 +10,12 @@ Conversation history in `stm_entries` is retained because it is message history 
 
 `services/agent_context.py` builds runtime messages from:
 
-1. A static Ultra Studio system contract.
+1. A static Ultra Studio system contract plus the frontend-configured persona.
 2. Recent visible messages from the current conversation only.
 3. The current user message and attachment paths.
 4. Resolved conversation artifacts injected by `agent_runs.py`.
 
-It never queries `persona`, loads the memory map, or exposes memory tools. Tool capability selection is deterministic from request text, current attachments, and resolved artifact kinds.
+It reads only the single persona configuration row; it never loads the memory map or exposes memory tools. Tool capability selection is deterministic from request text, current attachments, and resolved artifact kinds.
 
 ## General artifact model
 
@@ -40,4 +40,3 @@ The injected context contains exact paths and provenance only. File contents are
 - Text-only models receive attachment paths but not image bytes.
 - Existing image behavior and database rows remain compatible.
 - Global-memory routes and data are not deleted in this change; isolation is enforced by imports, runtime behavior, and tests.
-
