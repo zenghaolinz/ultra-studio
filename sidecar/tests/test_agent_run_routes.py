@@ -56,6 +56,22 @@ class ConfirmationLoop:
 
 
 class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
+    def test_request_combines_new_and_legacy_attachment_fields(self) -> None:
+        req = ChatRequest(
+            conversation_id="conversation-1",
+            content="read files",
+            attachment_paths=["C:/docs/spec.pdf", "C:/images/ref.png"],
+            image_paths=["C:/images/ref.png", "C:/legacy.txt"],
+        )
+
+        self.assertEqual(
+            req.all_attachment_paths,
+            ["C:/docs/spec.pdf", "C:/images/ref.png", "C:/legacy.txt"],
+        )
+
+    def test_active_runtime_has_no_global_memory_manager_dependency(self) -> None:
+        self.assertFalse(hasattr(agent_runs, "memory_mgr"))
+
     def test_text_only_model_keeps_text_and_removes_image_parts(self) -> None:
         messages = [
             {"role": "system", "content": "system"},
@@ -127,7 +143,7 @@ class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
         )
         db = object()
         with patch.object(
-            agent_runs, "record_uploaded_images", AsyncMock(return_value=[])
+            agent_runs, "record_uploaded_artifacts", AsyncMock(return_value=[])
         ) as record:
             await agent_runs._register_request_uploads(req, "message-1", db)
 
@@ -135,6 +151,42 @@ class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
             "conversation-1",
             ["C:/images/upload.png"],
             message_id="message-1",
+            db=db,
+        )
+
+    async def test_artifact_context_lists_all_kinds(self) -> None:
+        req = ChatRequest(conversation_id="conversation-1", content="open this file")
+        db = object()
+        with patch.object(
+            agent_runs, "backfill_generation_artifacts", AsyncMock()
+        ), patch.object(
+            agent_runs, "list_artifacts", AsyncMock(return_value=[])
+        ) as list_all:
+            await agent_runs._artifact_context_for_request(req, db)
+
+        list_all.assert_awaited_once_with("conversation-1", db=db)
+
+    async def test_successful_tool_output_is_projected_to_artifact_ledger(self) -> None:
+        event = {
+            "type": "tool.finished",
+            "data": {
+                "toolCallId": "call-1",
+                "name": "write_many_files",
+                "isError": False,
+                "result": {"files": [{"path": "C:/output/main.py"}]},
+            },
+        }
+        db = object()
+        with patch.object(
+            agent_runs, "record_tool_outputs", AsyncMock(return_value=[])
+        ) as record:
+            await agent_runs._project_tool_artifacts(event, "conversation-1", db)
+
+        record.assert_awaited_once_with(
+            "conversation-1",
+            tool_call_id="call-1",
+            tool_name="write_many_files",
+            result={"files": [{"path": "C:/output/main.py"}]},
             db=db,
         )
 

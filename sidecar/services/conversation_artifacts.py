@@ -23,6 +23,9 @@ DOCUMENT_EXTENSIONS = {
     ".odt", ".csv", ".tsv", ".xls", ".xlsx", ".ppt", ".pptx",
     ".json", ".jsonl", ".yaml", ".yml", ".xml", ".toml", ".ini", ".log",
 }
+ARTIFACT_OUTPUT_TOOLS = {
+    "write_many_files", "edit_text_file", "create_docx_document", "edit_docx_document",
+}
 
 
 def artifact_row_to_dict(row) -> dict[str, Any]:
@@ -157,6 +160,50 @@ async def record_uploaded_images(
         message_id=message_id,
         db=db,
     )
+
+
+def _existing_paths(value: Any) -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, str):
+        path = os.path.normpath(value)
+        if os.path.isfile(path):
+            paths.append(path)
+    elif isinstance(value, dict):
+        for nested in value.values():
+            paths.extend(_existing_paths(nested))
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            paths.extend(_existing_paths(nested))
+    return paths
+
+
+async def record_tool_outputs(
+    conversation_id: str,
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    result: Any,
+    db=None,
+) -> list[dict[str, Any]]:
+    if tool_name not in ARTIFACT_OUTPUT_TOOLS:
+        return []
+    artifacts = []
+    seen: set[str] = set()
+    for path in _existing_paths(result):
+        key = os.path.normcase(os.path.abspath(path))
+        if key in seen:
+            continue
+        seen.add(key)
+        artifacts.append(await upsert_artifact(
+            conversation_id,
+            kind=artifact_kind_for_path(path),
+            source="tool",
+            path=path,
+            tool_call_id=tool_call_id,
+            prompt=tool_name,
+            db=db,
+        ))
+    return artifacts
 
 
 def artifact_kind_for_path(path: str) -> str:

@@ -87,6 +87,8 @@ class AgentRuntimeLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(provider.calls), 2)
         self.assertIn("tool.started", [event["type"] for event in events])
         self.assertIn("tool.finished", [event["type"] for event in events])
+        tool_finished = next(event for event in events if event["type"] == "tool.finished")
+        self.assertEqual(tool_finished["data"]["result"], "read:a.txt")
         self.assertEqual(provider.calls[1][-1]["role"], "tool")
         self.assertEqual(provider.calls[1][-1]["content"], "read:a.txt")
 

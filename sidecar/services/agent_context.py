@@ -13,6 +13,40 @@ Read a document with a file tool before making claims about its contents.
 Do not claim that a generated or written output exists until its tool result confirms it.
 Ask for clarification when the requested target cannot be resolved safely."""
 
+FILE_KINDS = {"document", "code", "archive", "file"}
+GENERATION_KINDS = {"image", "audio", "video", "model"}
+
+
+def infer_agent_capabilities(
+    content: str,
+    *,
+    attachment_kinds: set[str] | None = None,
+    resolved_kinds: set[str] | None = None,
+) -> set[str]:
+    text = (content or "").lower()
+    kinds = set(attachment_kinds or set()) | set(resolved_kinds or set())
+    capabilities: set[str] = set()
+    file_tokens = [
+        "file", "document", "pdf", "word", "docx", "code", "script",
+        "folder", "directory", "project", "app", "website", "game",
+        "文件", "文档", "代码", "脚本", "目录", "文件夹", "项目", "网页", "游戏",
+    ]
+    web_tokens = [
+        "search the web", "web search", "search online", "latest news", "current information",
+        "搜索网页", "联网搜索", "网上查", "最新消息", "当前信息",
+    ]
+    generation_tokens = [
+        "generate image", "create image", "edit image", "generate video", "3d model",
+        "生成图片", "画一张", "修改图片", "生成视频", "生成模型", "3d模型", "三维模型",
+    ]
+    if kinds & FILE_KINDS or any(token in text for token in file_tokens):
+        capabilities.add("files")
+    if kinds & GENERATION_KINDS or any(token in text for token in generation_tokens):
+        capabilities.add("generation")
+    if any(token in text for token in web_tokens):
+        capabilities.add("web")
+    return capabilities
+
 
 def _attachment_text(user_input: str, attachment_paths: list[str] | None) -> str:
     existing = [

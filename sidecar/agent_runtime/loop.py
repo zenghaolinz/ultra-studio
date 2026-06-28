@@ -134,6 +134,7 @@ class AgentLoop:
                         "toolCallId": call.id,
                         "name": call.name,
                         "isError": result.is_error,
+                        "result": result.content,
                     },
                 )
                 messages.append(self._tool_result_message(result))

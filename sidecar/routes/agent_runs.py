@@ -10,7 +10,6 @@ from agent_runtime.models import AgentRunRequest
 from agent_runtime.policy import PermissionPolicy
 from agent_runtime.providers import NativeToolProvider
 from db.sqlite import get_db
-from memory import manager as memory_mgr
 from schemas import ChatRequest
 from services.chat_messages import (
     remove_internal_source_message,
@@ -20,10 +19,13 @@ from services.chat_messages import (
 from services.chat_provider_client import get_provider_client
 from services.artifact_references import build_artifact_context, resolve_artifact_references
 from services.conversation_artifacts import (
+    artifact_kind_for_path,
     backfill_generation_artifacts,
     list_artifacts,
-    record_uploaded_images,
+    record_uploaded_artifacts,
+    record_tool_outputs,
 )
+from services.agent_context import build_agent_context, infer_agent_capabilities
 from services.chat_router import model_capabilities
 from services.model_context import fit_messages_to_context
 
@@ -113,11 +115,11 @@ def _confirmation_content(tool_call: dict) -> str:
 
 
 async def _register_request_uploads(req: ChatRequest, message_id: str | None, db) -> None:
-    if not req.image_paths:
+    if not req.all_attachment_paths:
         return
-    await record_uploaded_images(
+    await record_uploaded_artifacts(
         req.conversation_id,
-        req.image_paths,
+        req.all_attachment_paths,
         message_id=message_id,
         db=db,
     )
@@ -127,7 +129,6 @@ async def _artifact_context_for_request(req: ChatRequest, db):
     await backfill_generation_artifacts(req.conversation_id, db=db)
     artifacts = await list_artifacts(
         req.conversation_id,
-        kind="image",
         db=db,
     )
     resolved = resolve_artifact_references(req.content, artifacts)
@@ -163,6 +164,21 @@ def _adapt_messages_for_model(messages: list[dict], *, supports_vision: bool) ->
     return adapted
 
 
+async def _project_tool_artifacts(event: dict, conversation_id: str, db) -> None:
+    if event.get("type") != "tool.finished":
+        return
+    data = event.get("data") or {}
+    if data.get("isError"):
+        return
+    await record_tool_outputs(
+        conversation_id,
+        tool_call_id=str(data.get("toolCallId") or ""),
+        tool_name=str(data.get("name") or ""),
+        result=data.get("result"),
+        db=db,
+    )
+
+
 async def _prepare_run(req: ChatRequest):
     db = await get_db()
     await remove_internal_source_message(db, req)
@@ -171,31 +187,29 @@ async def _prepare_run(req: ChatRequest):
     client, provider_config = await get_provider_client(db, req.model_id)
     if not client:
         raise HTTPException(status_code=400, detail="No default model configured")
-    try:
-        context_messages, legacy_tools = await memory_mgr.build_context(
-            conversation_id=req.conversation_id,
-            user_input=req.content,
-            image_paths=req.image_paths,
-        )
-    except Exception:
-        context_messages = [
-            {"role": "system", "content": "你是 Ultra Studio 的个人创作助手。"},
-            {"role": "user", "content": req.content},
-        ]
-        legacy_tools = []
+    supports_vision = model_capabilities(
+        provider_config,
+        req.vision_enabled,
+    )["supports_vision"]
+    context_messages = await build_agent_context(
+        db,
+        conversation_id=req.conversation_id,
+        user_input=req.content,
+        current_message_id=user_message_id,
+        attachment_paths=req.all_attachment_paths,
+        include_image_content=supports_vision,
+    )
 
     artifact_context, resolved_artifacts = await _artifact_context_for_request(req, db)
     context_messages = _append_system_context(context_messages, artifact_context)
     context_messages = _adapt_messages_for_model(
         context_messages,
-        supports_vision=model_capabilities(
-            provider_config,
-            req.vision_enabled,
-        )["supports_vision"],
+        supports_vision=supports_vision,
     )
-    capabilities = _capabilities_for_tools(
-        legacy_tools,
-        has_resolved_images=bool(resolved_artifacts),
+    capabilities = infer_agent_capabilities(
+        req.content,
+        attachment_kinds={artifact_kind_for_path(path) for path in req.all_attachment_paths},
+        resolved_kinds={str(artifact.get("kind") or "") for artifact in resolved_artifacts},
     )
     registry = build_runtime_registry(req.conversation_id, req.permission_mode)
     definitions = registry.definitions(capabilities)
@@ -225,6 +239,7 @@ async def stream_agent_run(req: ChatRequest):
             runtime_request,
             capabilities,
         ):
+            await _project_tool_artifacts(event, req.conversation_id, db)
             if event["type"] == "run.finished":
                 data = event["data"]
                 if data.get("status") == "confirmation_required":

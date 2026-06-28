@@ -124,6 +124,7 @@ Likely disposable tables:
 - Tauri chat streaming defaults to `POST /api/agent/runs/stream`.
 - The runtime in `sidecar/agent_runtime/` uses one primary model/tool loop. Ordinary chat does not call a separate LLM router and text deltas are not buffered for DSML detection.
 - Tool availability is selected deterministically from context, then filtered by capability and permission policy. Existing file, web, generation, and queue services remain the execution authority behind adapters.
+- The active runtime context is conversation-scoped. Build it with `sidecar/services/agent_context.py`; do not read persona, the global memory map, LTM files, activated memory, or recall/save-memory tools. `stm_entries` is retained only as message history filtered by the current `conversation_id` and visible messages.
 - Image, video, and 3D tools enqueue work and return task IDs to the model immediately.
 - Standard mode stops destructive calls with a structured confirmation event. The route adapter formats the existing confirmation-card markers until the frontend consumes structured confirmations directly.
 - Legacy `/api/chat/send` and `/api/chat/send/stream` URLs are thin adapters over the same single-loop runtime; they no longer contain a second orchestrator.
@@ -158,6 +159,7 @@ Likely disposable tables:
 - Keep project document/image/file candidate scanning out of `sidecar/routes/chat.py`; use `sidecar/services/chat_project_files.py` for fuzzy matching files under the current project root.
 - Keep project path lookup, project-context injection text, and open-folder request handling out of `sidecar/routes/chat.py`; use `sidecar/services/chat_projects.py`.
 - Keep conversation artifact reference parsing out of `sidecar/routes/chat.py`; use `sidecar/services/chat_artifacts.py` for generic image/file/document/code/model/video artifact markers, history scanning, ordinal references like "second image", and semantic references like "yellow dog". Do not add one-off keyword branches for a single asset type when the same behavior should generalize to files and other artifacts.
+- The new runtime uses `sidecar/services/conversation_artifacts.py` and `sidecar/services/artifact_references.py` as its typed artifact ledger and deterministic resolver. It covers uploaded, generated, and tool-created image/document/code/audio/video/model/archive/file artifacts with message, task, and tool-call provenance. `image_paths` remains a legacy transport field; new callers may send `attachment_paths`, and runtime code must use `ChatRequest.all_attachment_paths`.
 - Keep router constants, safe JSON parsing, model-capability inference, and pure trace payload formatting out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router.py`.
 - Keep router context gathering and agent trace block rendering out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_context.py`. Router action execution can stay in chat until those dependencies are split further.
 - Keep routed-result formatting and post-route media context injection out of `sidecar/routes/chat.py`; use `sidecar/services/chat_router_results.py`.

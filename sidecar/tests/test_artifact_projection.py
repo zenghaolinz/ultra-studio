@@ -18,6 +18,7 @@ from services.conversation_artifacts import (
     backfill_generation_artifacts,
     list_artifacts,
     project_generation_outputs,
+    record_tool_outputs,
     record_uploaded_images,
 )
 
@@ -78,6 +79,28 @@ class ArtifactProjectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["kind"] for item in artifacts], ["image", "model"])
         self.assertTrue(all(item["source"] == "generated" for item in artifacts))
         self.assertTrue(all(item["generationTaskId"] == "task-1" for item in artifacts))
+
+    async def test_projects_written_files_from_tool_results(self) -> None:
+        code = Path(self.temp_dir.name) / "main.py"
+        document = Path(self.temp_dir.name) / "report.docx"
+        code.write_text("print('ok')", encoding="utf-8")
+        document.write_bytes(b"docx")
+
+        projected = await record_tool_outputs(
+            "conversation-1",
+            tool_call_id="call-1",
+            tool_name="write_many_files",
+            result={
+                "files": [{"path": str(code)}],
+                "output": {"file_path": str(document)},
+                "ignored_input": "not-a-path",
+            },
+            db=self.db,
+        )
+
+        self.assertEqual([item["kind"] for item in projected], ["code", "document"])
+        self.assertTrue(all(item["source"] == "tool" for item in projected))
+        self.assertTrue(all(item["toolCallId"] == "call-1" for item in projected))
 
     async def test_async_task_success_invokes_artifact_projection(self) -> None:
         with patch.object(generation_tasks, "get_db", AsyncMock(return_value=self.db)), patch.object(

@@ -10,10 +10,23 @@ if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
 from db import sqlite as sqlite_db
-from services.agent_context import build_agent_context
+from services.agent_context import build_agent_context, infer_agent_capabilities
 
 
 class AgentContextTests(unittest.IsolatedAsyncioTestCase):
+    def test_capabilities_follow_request_and_artifact_kinds(self) -> None:
+        self.assertEqual(infer_agent_capabilities("hello"), set())
+        self.assertEqual(
+            infer_agent_capabilities("read this", attachment_kinds={"document"}),
+            {"files"},
+        )
+        self.assertEqual(
+            infer_agent_capabilities("\u4fee\u6539\u4e0a\u9762\u7684\u56fe", resolved_kinds={"image"}),
+            {"generation"},
+        )
+        self.assertEqual(infer_agent_capabilities("search the web"), {"web"})
+        self.assertEqual(infer_agent_capabilities("create a Python project"), {"files"})
+
     async def test_context_is_conversation_scoped_and_excludes_global_memory(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             db_path = Path(temp_dir) / "agent.db"

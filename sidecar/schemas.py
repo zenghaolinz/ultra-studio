@@ -12,6 +12,7 @@ class MessageCreate(BaseModel):
 class ChatRequest(BaseModel):
     conversation_id: str = Field(min_length=1)
     content: str = Field(min_length=1)
+    attachment_paths: Optional[list[str]] = None
     image_paths: Optional[list[str]] = None
     permission_mode: str = "standard"
     project_path: Optional[str] = None
@@ -19,6 +20,10 @@ class ChatRequest(BaseModel):
     vision_enabled: bool = False
     hidden_user_message: bool = False
     remove_message_id: Optional[str] = None
+
+    @property
+    def all_attachment_paths(self) -> list[str]:
+        return list(dict.fromkeys((self.attachment_paths or []) + (self.image_paths or [])))
 
 
 class ConversationCreate(BaseModel):
