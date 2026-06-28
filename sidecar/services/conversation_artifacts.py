@@ -10,6 +10,19 @@ from services.chat_paths import IMAGE_EXTENSIONS
 
 MODEL_EXTENSIONS = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".aac", ".m4a", ".ogg", ".opus"}
+ARCHIVE_EXTENSIONS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"}
+CODE_EXTENSIONS = {
+    ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
+    ".rs", ".go", ".java", ".kt", ".kts", ".c", ".h", ".cc", ".cpp",
+    ".hpp", ".cs", ".swift", ".rb", ".php", ".sh", ".ps1", ".sql",
+    ".html", ".htm", ".css", ".scss", ".sass", ".vue", ".svelte",
+}
+DOCUMENT_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".pdf", ".doc", ".docx", ".rtf",
+    ".odt", ".csv", ".tsv", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".json", ".jsonl", ".yaml", ".yml", ".xml", ".toml", ".ini", ".log",
+}
 
 
 def artifact_row_to_dict(row) -> dict[str, Any]:
@@ -104,21 +117,21 @@ async def list_artifacts(
     return [artifact_row_to_dict(row) for row in rows]
 
 
-async def record_uploaded_images(
+async def record_uploaded_artifacts(
     conversation_id: str,
-    image_paths: list[str] | None,
+    attachment_paths: list[str] | None,
     *,
     message_id: str | None,
     db=None,
 ) -> list[dict[str, Any]]:
     artifacts = []
-    for path_text in image_paths or []:
+    for path_text in attachment_paths or []:
         path = os.path.normpath(path_text)
-        if os.path.splitext(path)[1].lower() not in IMAGE_EXTENSIONS or not os.path.isfile(path):
+        if not os.path.isfile(path):
             continue
         artifacts.append(await upsert_artifact(
             conversation_id,
-            kind="image",
+            kind=artifact_kind_for_path(path),
             source="uploaded",
             path=path,
             message_id=message_id,
@@ -127,15 +140,42 @@ async def record_uploaded_images(
     return artifacts
 
 
-def artifact_kind_for_path(path: str) -> str | None:
+async def record_uploaded_images(
+    conversation_id: str,
+    image_paths: list[str] | None,
+    *,
+    message_id: str | None,
+    db=None,
+) -> list[dict[str, Any]]:
+    """Compatibility alias for callers that still use the old transport name."""
+    return await record_uploaded_artifacts(
+        conversation_id,
+        [
+            path for path in image_paths or []
+            if os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
+        ],
+        message_id=message_id,
+        db=db,
+    )
+
+
+def artifact_kind_for_path(path: str) -> str:
     extension = os.path.splitext(path)[1].lower()
     if extension in IMAGE_EXTENSIONS:
         return "image"
+    if extension in CODE_EXTENSIONS:
+        return "code"
+    if extension in DOCUMENT_EXTENSIONS:
+        return "document"
+    if extension in AUDIO_EXTENSIONS:
+        return "audio"
     if extension in MODEL_EXTENSIONS:
         return "model"
     if extension in VIDEO_EXTENSIONS:
         return "video"
-    return None
+    if extension in ARCHIVE_EXTENSIONS:
+        return "archive"
+    return "file"
 
 
 async def project_generation_outputs(
@@ -156,8 +196,6 @@ async def project_generation_outputs(
                 continue
             path = os.path.normpath(path_text)
             kind = artifact_kind_for_path(path)
-            if not kind:
-                continue
             artifacts.append(await upsert_artifact(
                 conversation_id,
                 kind=kind,
@@ -188,8 +226,6 @@ def project_generation_outputs_sync(
                     continue
                 path = os.path.normpath(path_text)
                 kind = artifact_kind_for_path(path)
-                if not kind:
-                    continue
                 connection.execute(
                     """
                     INSERT INTO conversation_artifacts(

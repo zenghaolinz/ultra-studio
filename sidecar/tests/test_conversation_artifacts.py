@@ -12,10 +12,49 @@ if str(SIDECAR_DIR) not in sys.path:
     sys.path.insert(0, str(SIDECAR_DIR))
 
 from db import sqlite as sqlite_db
-from services.conversation_artifacts import list_artifacts, upsert_artifact
+from services.conversation_artifacts import (
+    artifact_kind_for_path,
+    list_artifacts,
+    record_uploaded_artifacts,
+    upsert_artifact,
+)
 
 
 class ConversationArtifactTests(unittest.IsolatedAsyncioTestCase):
+    def test_classifies_general_file_artifacts(self) -> None:
+        self.assertEqual(artifact_kind_for_path("requirements.pdf"), "document")
+        self.assertEqual(artifact_kind_for_path("main.py"), "code")
+        self.assertEqual(artifact_kind_for_path("samples.zip"), "archive")
+        self.assertEqual(artifact_kind_for_path("voice.wav"), "audio")
+        self.assertEqual(artifact_kind_for_path("payload.bin"), "file")
+
+    async def test_registers_every_existing_attachment_with_message_provenance(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            paths = []
+            for name in ["reference.png", "requirements.pdf", "main.py", "payload.bin"]:
+                path = Path(temp_dir) / name
+                path.write_bytes(b"content")
+                paths.append(str(path))
+            db_path = Path(temp_dir) / "agent.db"
+            with patch.object(sqlite_db, "DB_PATH", str(db_path)):
+                await sqlite_db._migrate()
+            db = await aiosqlite.connect(db_path)
+            db.row_factory = aiosqlite.Row
+            await db.execute("INSERT INTO conversations(id, title) VALUES ('c1', 'test')")
+            await db.commit()
+            try:
+                artifacts = await record_uploaded_artifacts(
+                    "c1", paths, message_id="message-1", db=db
+                )
+            finally:
+                await db.close()
+
+        self.assertEqual(
+            [artifact["kind"] for artifact in artifacts],
+            ["image", "document", "code", "file"],
+        )
+        self.assertTrue(all(artifact["messageId"] == "message-1" for artifact in artifacts))
+
     async def test_migration_creates_artifact_table_with_conversation_cascade(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             db_path = Path(temp_dir) / "agent.db"
