@@ -55,6 +55,25 @@ class ConfirmationLoop:
 
 
 class AgentRunRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_request_uploads_are_registered_with_user_message(self) -> None:
+        req = ChatRequest(
+            conversation_id="conversation-1",
+            content="edit this",
+            image_paths=["C:/images/upload.png"],
+        )
+        db = object()
+        with patch.object(
+            agent_runs, "record_uploaded_images", AsyncMock(return_value=[])
+        ) as record:
+            await agent_runs._register_request_uploads(req, "message-1", db)
+
+        record.assert_awaited_once_with(
+            "conversation-1",
+            ["C:/images/upload.png"],
+            message_id="message-1",
+            db=db,
+        )
+
     async def test_confirmation_event_is_formatted_and_persisted_for_existing_ui(self) -> None:
         runtime_request = AgentRunRequest(
             run_id="run-1",

@@ -18,6 +18,7 @@ from services.chat_messages import (
     save_visible_user_message,
 )
 from services.chat_provider_client import get_provider_client
+from services.conversation_artifacts import record_uploaded_images
 from services.model_context import fit_messages_to_context
 
 router = APIRouter(prefix="/api/agent/runs", tags=["agent-runs"])
@@ -99,10 +100,22 @@ def _confirmation_content(tool_call: dict) -> str:
     return "This action requires confirmation."
 
 
+async def _register_request_uploads(req: ChatRequest, message_id: str | None, db) -> None:
+    if not req.image_paths:
+        return
+    await record_uploaded_images(
+        req.conversation_id,
+        req.image_paths,
+        message_id=message_id,
+        db=db,
+    )
+
+
 async def _prepare_run(req: ChatRequest):
     db = await get_db()
     await remove_internal_source_message(db, req)
-    await save_visible_user_message(db, req)
+    user_message_id = await save_visible_user_message(db, req)
+    await _register_request_uploads(req, user_message_id, db)
     client, provider_config = await get_provider_client(db, req.model_id)
     if not client:
         raise HTTPException(status_code=400, detail="No default model configured")

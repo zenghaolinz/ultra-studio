@@ -8,6 +8,10 @@ from typing import Any
 
 from db.sqlite import DB_PATH, get_db
 from services.generation_events import generation_event_broker
+from services.conversation_artifacts import (
+    project_generation_outputs,
+    project_generation_outputs_sync,
+)
 
 TERMINAL_STATUSES = {"success", "error", "cancelled"}
 TRANSITION_SOURCES = {
@@ -222,6 +226,19 @@ async def update_generation_task(
     await db.commit()
     changed = bool(cursor.rowcount)
     if changed:
+        if status == "success":
+            task = await get_generation_task(task_id)
+            if task:
+                try:
+                    await project_generation_outputs(
+                        task["conversationId"],
+                        generation_task_id=task_id,
+                        prompt=task["prompt"],
+                        output_paths=task["outputPaths"],
+                        db=db,
+                    )
+                except Exception as exc:
+                    print(f"[artifacts] generation projection failed task={task_id}: {type(exc).__name__}")
         await _publish_task(task_id)
     return changed
 
@@ -268,6 +285,16 @@ def update_generation_task_sync(
         conn.commit()
     task = _get_generation_task_sync(task_id)
     if task:
+        if status == "success":
+            try:
+                project_generation_outputs_sync(
+                    task["conversationId"],
+                    generation_task_id=task_id,
+                    prompt=task["prompt"],
+                    output_paths=task["outputPaths"],
+                )
+            except Exception as exc:
+                print(f"[artifacts] sync generation projection failed task={task_id}: {type(exc).__name__}")
         generation_event_broker.publish_nowait(task)
 
 
