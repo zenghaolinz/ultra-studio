@@ -91,6 +91,23 @@ CREATE_STATEMENTS = [
     FOREIGN KEY (message_id) REFERENCES stm_entries(id) ON DELETE CASCADE,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 )""",
+    """CREATE TABLE IF NOT EXISTS conversation_artifacts (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    message_id TEXT DEFAULT NULL,
+    tool_call_id TEXT DEFAULT NULL,
+    generation_task_id TEXT DEFAULT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL CHECK(source IN ('uploaded', 'generated', 'tool')),
+    path TEXT NOT NULL,
+    prompt TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'pending', 'error')),
+    sequence INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    UNIQUE(conversation_id, source, path)
+)""",
     "CREATE INDEX IF NOT EXISTS idx_stm_conv ON stm_entries(conversation_id, created_at)",
 ]
 
@@ -99,6 +116,8 @@ POST_MIGRATION_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_generation_tasks_updated ON generation_tasks(updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_generation_tasks_status ON generation_tasks(status, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_message_tool_events_message ON message_tool_events(message_id, position)",
+    "CREATE INDEX IF NOT EXISTS idx_conversation_artifacts_lookup ON conversation_artifacts(conversation_id, kind, source, sequence)",
+    "CREATE INDEX IF NOT EXISTS idx_conversation_artifacts_task ON conversation_artifacts(generation_task_id)",
 ]
 
 MIGRATIONS = [
